@@ -178,11 +178,75 @@ them would be reading the answer key.
 
 ---
 
-## 11.6 What this layer does not do
+## 11.6 The query DSL: what the model is allowed to say
+
+The five handlers above take no window argument - they look at "the last two
+weeks" because that is the question the brief asks. That is fine for a demo and
+wrong for a product: the user will say "the last month", and the language model
+in Phase 3 has to be able to express it. So the handlers no longer contain their
+own SQL. They are renderers over `vehiclegpt/analytics/dsl.py`.
+
+```
+free text ──▶ classify()  ─┐
+                           ├─▶  Query(kind, window, params)  ──▶  compile  ──▶  SQL + bindings
+model JSON ─▶ dsl.parse() ─┘
+```
+
+A query is a small JSON object:
+
+```json
+{"kind": "regime_compare", "start_day": "2026-03-02", "end_day": "2026-03-15"}
+```
+
+`kind` is one of five shapes (`consumption_trend`, `efficiency_drop`,
+`adas_events`, `precursor`, `regime_compare`). Anything else - an unknown key, a
+date that is not a date, a window longer than two years - is rejected with an
+error naming the problem.
+
+**The property that makes this safe to hand to a model:** the compiled SQL is a
+function of `kind` alone. Every value is a bound parameter, so there is no code
+path in which a value reaches the query text. Injection is not filtered out; it
+has nowhere to enter. That is asserted, not asserted-to:
+
+- `test_sql_text_is_identical_across_wildly_different_inputs` compiles each kind
+  against wildly different windows and params and compares the SQL byte for byte.
+- `test_hostile_dates_never_approach_the_sql` feeds eight payloads
+  (`'; DROP TABLE sample; --`, `UNION SELECT`, NUL bytes) through validation.
+- `test_a_query_built_without_parse_cannot_reach_the_database` bypasses the
+  validator by constructing `Query` directly - the compiler still refuses.
+- The suite is mutation-checked: rewriting the compiler to interpolate
+  `start_day` fails three tests immediately.
+
+Trying it by hand:
+
+```
+$ python3 tools/phase0/ask.py --db /tmp/vg.db --dsl \
+    '{"kind":"adas_events","start_day":"2026-03-01'\''; DROP TABLE sample; --","end_day":"2026-03-05"}'
+invalid query: start_day is not an ISO date: "2026-03-01'; DROP TABLE sample; --"
+```
+
+Exit code 2, and `sample` still has all 426 373 rows.
+
+**Why a closed set of five kinds rather than a general SQL dialect.** A general
+compiler is a much larger surface to test, and its extra power would only ever
+be exercised by the model - the deterministic handlers need exactly these five.
+The five are the brief's five questions; a new kind is a deliberate code change
+with its own SQL constant, not something a model can invent at runtime.
+
+## 11.7 What this layer does not do
 
 - **It does not parse free text.** `classify()` is a keyword matcher over five
   known shapes. A paraphrase it does not recognise escalates rather than
-  guessing. Replacing it with a small classifier is a Phase 3 decision.
+  guessing. Replacing it with a small classifier is a Phase 3 decision — but the
+  DSL is now the target that classifier emits, so the two can be developed
+  separately.
+- **The DSL covers four of the five questions directly.** `precursor` returns
+  warning events and their event-level predecessors, and on this dataset that is
+  *empty by design*: the only predecessors recorded are the harness's own
+  `fault.*` rows, which are excluded. The real antecedent - the coolant pump
+  stopping - is found in the sample series by `_sustained_stall`, not by SQL.
+  Time-series reasoning is a typed accessor, not a query shape, and pretending
+  otherwise would put a scan of millions of rows behind a single DSL token.
 - **It does not explain causality.** It reports a decomposition and labels it an
   attribution. "HVAC accounts for 66 Wh/km of 213" is arithmetic; "the cold
   caused the range loss" is an inference and belongs to the model layer.

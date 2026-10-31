@@ -25,6 +25,8 @@ import datetime as dt
 import sqlite3
 from dataclasses import dataclass, field
 
+from vehiclegpt.analytics import dsl
+
 EVIDENCE_KIND_PREFIX = "fault."
 
 
@@ -85,21 +87,37 @@ def _pct(new: float, old: float) -> float:
 # Q1: why has my range reduced?
 # ---------------------------------------------------------------------------
 
+def _history(conn: sqlite3.Connection) -> tuple[str, str]:
+    """First and last day with a daily rollup - the window the store covers."""
+    row = conn.execute("SELECT MIN(day) AS lo, MAX(day) AS hi FROM daily").fetchone()
+    if row is None or row["lo"] is None:
+        raise LookupError("the store has no daily rollups yet")
+    return row["lo"], row["hi"]
+
+
 def _window_stats(conn: sqlite3.Connection, start_day: str, end_day: str) -> dict:
-    """Distance, energy, driving hours and mean HVAC/ambient draw over a window."""
-    row = conn.execute(
-        "SELECT COALESCE(SUM(distance_km), 0) AS km, COALESCE(SUM(energy_wh), 0) AS wh, "
-        "       AVG(hvac_w) AS hvac_w, AVG(ambient_c) AS ambient_c, COUNT(*) AS days "
-        "FROM daily WHERE day BETWEEN ? AND ? AND distance_km > 2",
-        (start_day, end_day)).fetchone()
-    hours = _drive_hours(conn, _day_ns(start_day), _day_ns(end_day) + 86400 * 10**9)
-    km, wh = float(row["km"]), float(row["wh"])
-    hvac_w = row["hvac_w"] or 0.0
+    """Distance, energy, driving hours and mean HVAC/ambient draw over a window.
+
+    The arithmetic lives here, but the aggregation is the DSL's: a single
+    compiled statement returns both windows, so the definition of "consumption
+    over a window" cannot drift between them.
+    """
+    query = dsl.build(dsl.Kind.CONSUMPTION_TREND, start_day, end_day, baseline_days=0)
+    row = dsl.run(conn, query)[0]
+    return _stats_from(row, "a")
+
+
+def _stats_from(row: dict, prefix: str) -> dict:
+    """Turn one half of a ``consumption_trend`` row into a stats dict."""
+    km = float(row[f"{prefix}_km"] or 0.0)
+    wh = float(row[f"{prefix}_wh"] or 0.0)
+    hours = float(row[f"{prefix}_drive_ns"] or 0) / 3.6e12
+    hvac_w = float(row[f"{prefix}_hvac_w"] or 0.0)
     return {
-        "days": int(row["days"]), "distance_km": km, "energy_wh": wh,
+        "days": int(row[f"{prefix}_days"] or 0), "distance_km": km, "energy_wh": wh,
         "wh_per_km": wh / km if km else float("nan"),
-        "hours": hours, "hvac_w": float(hvac_w),
-        "ambient_c": float(row["ambient_c"] or 0.0),
+        "hours": hours, "hvac_w": hvac_w,
+        "ambient_c": float(row[f"{prefix}_ambient_c"] or 0.0),
         # W * h / km = Wh/km: the HVAC energy attributable to each kilometre.
         "hvac_wh_per_km": (hvac_w * hours / km) if km else float("nan"),
     }
@@ -126,8 +144,13 @@ def range_reduction(conn: sqlite3.Connection) -> Answer:
                       caveats=["need at least 14 days of data"])
 
     day = row["day"]
-    cur = _window_stats(conn, _shift_day(day, -6), day)
-    prior = _window_stats(conn, _shift_day(day, -13), _shift_day(day, -7))
+    # Both windows come from a single compiled statement: the window and the
+    # baseline it is compared against cannot disagree about what "consumption
+    # over a period" means.
+    query = dsl.build(dsl.Kind.CONSUMPTION_TREND, _shift_day(day, -6), day,
+                      baseline_days=7)
+    both = dsl.run(conn, query)[0]
+    cur, prior = _stats_from(both, "a"), _stats_from(both, "b")
 
     delta = cur["wh_per_km"] - prior["wh_per_km"]
     hvac_delta = cur["hvac_wh_per_km"] - prior["hvac_wh_per_km"]
@@ -182,19 +205,11 @@ def efficiency_largest_drop(conn: sqlite3.Connection, min_km: float = 10.0) -> A
     answers "when did the rolling week end" instead of "when did efficiency
     drop". Days below ``min_km`` are excluded because a short errand is noisy.
     """
-    row = conn.execute(
-        """
-        SELECT day, wh_per_km, ambient_c, prev_wh_per_km, prev_ambient_c,
-               wh_per_km - prev_wh_per_km AS delta
-        FROM (
-            SELECT day, wh_per_km, ambient_c,
-                   LAG(wh_per_km)    OVER (ORDER BY day) AS prev_wh_per_km,
-                   LAG(ambient_c)    OVER (ORDER BY day) AS prev_ambient_c
-            FROM daily WHERE distance_km >= ? AND wh_per_km IS NOT NULL
-        )
-        WHERE prev_wh_per_km IS NOT NULL
-        ORDER BY delta DESC LIMIT 1
-        """, (min_km,)).fetchone()
+    lo, hi = _history(conn)
+    hits = dsl.run(conn, dsl.build(dsl.Kind.EFFICIENCY_DROP, lo, hi, min_km=min_km))
+    row = dict(hits[0]) if hits else None
+    if row is not None:
+        row["delta"] = row["delta_wh_per_km"]
     if row is None:
         return Answer("efficiency_largest_drop", "P0",
                       "Not enough comparable days yet.",
@@ -237,8 +252,7 @@ def adas_events(conn: sqlite3.Connection, day: str | None = None) -> Answer:
         day = conn.execute(
             "SELECT date(MAX(ts_ns) / 1000000000, 'unixepoch') AS d FROM event"
         ).fetchone()["d"]
-    rows = [dict(r) for r in conn.execute(
-        "SELECT * FROM v_adas_disengagements WHERE day = ? ORDER BY ts_ns", (day,))]
+    rows = dsl.run(conn, dsl.build(dsl.Kind.ADAS_EVENTS, day, day))
 
     if not rows:
         text = f"No ADAS disengagement events recorded on {_fmt_day(day)}."
@@ -342,7 +356,9 @@ def _clock(ts_ns: int) -> str:
 # ---------------------------------------------------------------------------
 
 def city_vs_highway(conn: sqlite3.Connection) -> Answer:
-    rows = {r["regime"]: dict(r) for r in conn.execute("SELECT * FROM v_regime_energy")}
+    lo, hi = _history(conn)
+    rows = {r["regime"]: r
+            for r in dsl.run(conn, dsl.build(dsl.Kind.REGIME_COMPARE, lo, hi))}
     city, hwy = rows.get("city"), rows.get("highway")
     if not city or not hwy:
         return Answer("city_vs_highway", "P0",

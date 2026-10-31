@@ -87,6 +87,22 @@ measure against.
 correct answers against a scenario with known ground truth. Retrieval recall@8
 ≥ 85 % on a 100-query event-search set.
 
+**Where this phase actually stands:**
+
+| Task | State |
+|---|---|
+| 2.1 windowed accessors | ✅ four typed views + one compiled statement per window |
+| 2.9 DSL schema, validator, compiler | ✅ five kinds, adversarial suite, mutation-checked |
+| 2.2/2.3 change-point and anomaly scoring | ⬜ next |
+| 2.4 `driving_mode` derivation | 🔶 speed thresholds only, no GMM |
+| 2.5 lead-lag / precedence | 🔶 event-level only, and empty on this data by design |
+| 2.6 episode cards | ⬜ |
+| 2.7/2.8 hybrid retrieval, BGE embeddings | ⛔ **blocked**: HuggingFace is unreachable from the sandbox, so no embedding model can be downloaded. FTS5/BM25 alone is not blocked and can be built first. |
+
+The DSL half of G2 is met: all five questions run through the compiled path and
+return byte-identical answers to the pre-refactor handlers. The recall half is
+untouched, and its dense-retrieval component cannot be measured here.
+
 **This gate is the real milestone.** At G2 you have a working vehicle-analytics
 product that happens to have no AI in it. Everything after is enhancement.
 
