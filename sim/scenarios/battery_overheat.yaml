@@ -1,0 +1,27 @@
+# Q4 in the brief: "What happened before the battery overheating warning?"
+#
+# Sequence, with known ground truth:
+#   t=0     drive begins at 24 C ambient
+#   t=300   coolant pump fails (stuck at 0 %)
+#   t=~     pack temperature climbs; warning fires at 60 C, critical at 75 C
+#
+# The precursor the analytics layer must rediscover is the pump duty dropping to
+# zero BEFORE the temperature rises - which is exactly what "what happened
+# before the warning" should mean.
+name: battery_overheat
+seed: 20260214
+ambient_c: 24.0
+initial_soc: 74.0
+hvac_setpoint_c: 20.0
+segments:
+  - {mode: highway, duration_s: 600}
+  - {mode: highway, duration_s: 900}
+  - {mode: city,    duration_s: 300}
+faults:
+  - kind: coolant_pump_failure
+    start_s: 300
+    duration_s: 1500
+  - kind: battery_overheat
+    start_s: 120
+    duration_s: 1750
+    params: {watts: 15000}

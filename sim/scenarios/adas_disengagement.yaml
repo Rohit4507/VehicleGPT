@@ -1,0 +1,13 @@
+# Q3 in the brief: "Show all ADAS disengagement events from yesterday."
+name: adas_disengagement
+seed: 20260401
+ambient_c: 29.0
+initial_soc: 66.0
+hvac_setpoint_c: 21.0
+segments:
+  - {mode: highway, duration_s: 1200}
+faults:
+  - {kind: adas_disengagement, start_s: 200,  duration_s: 4}
+  - {kind: adas_disengagement, start_s: 610,  duration_s: 4}
+  - {kind: adas_disengagement, start_s: 730,  duration_s: 4}
+  - {kind: adas_disengagement, start_s: 1100, duration_s: 4}

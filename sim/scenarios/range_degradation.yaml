@@ -1,0 +1,21 @@
+# Q1 and Q2 in the brief: "Why has my range reduced?" / "When did efficiency
+# drop most?"
+#
+# A cold snap with the HVAC working hard, plus a slow sensor drift that makes
+# the displayed range optimistic. Two competing explanations - which is the
+# point: a good assistant ranks the causes rather than picking one.
+name: range_degradation
+seed: 20260301
+ambient_c: -6.0
+initial_soc: 90.0
+hvac_setpoint_c: 23.0
+segments:
+  - {mode: city,    duration_s: 600}
+  - {mode: city,    duration_s: 600}
+  - {mode: highway, duration_s: 900}
+  - {mode: city,    duration_s: 600}
+faults:
+  - kind: sensor_drift
+    start_s: 900
+    duration_s: 1800
+    params: {per_second: 0.015, target: 1.0}
