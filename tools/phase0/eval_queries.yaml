@@ -1,0 +1,68 @@
+# Grounded-summarisation cases for the bake-off accuracy check.
+#
+# These are NOT retrieval tests - retrieval does not exist yet. Each case hands
+# the model a compact evidence block (the kind the analytics layer will build)
+# and asks one of the case study's example questions. What is being measured is
+# whether a candidate model can reason over supplied facts without inventing
+# ones, which is the capability the product actually depends on.
+#
+# `must_contain` is a list of alternatives groups: the answer passes a group if
+# any alternative appears. Deliberately lenient on phrasing, strict on facts.
+# `must_not_contain` catches the failure that matters most: a confident wrong
+# number.
+
+cases:
+  - id: adas_events_yesterday
+    query: Show all ADAS disengagement events from yesterday.
+    evidence: |
+      2026-03-14 08:12:41  ADAS disengaged  speed 94 kph  duration 4 s
+      2026-03-14 10:33:02  ADAS disengaged  speed 102 kph duration 4 s
+      2026-03-14 12:05:19  ADAS disengaged  speed 88 kph  duration 4 s
+      2026-03-14 18:20:44  ADAS disengaged  speed 110 kph duration 4 s
+    must_contain:
+      - ["4", "four"]
+      - ["08:12", "8:12", "08:12:41"]
+      - ["18:20", "6:20", "18:20:44"]
+
+  - id: efficiency_largest_drop
+    query: When did fuel efficiency show the largest drop?
+    evidence: |
+      Weekly efficiency (Wh/km): 2026-W08 148, 2026-W09 151, 2026-W10 152,
+      2026-W11 196, 2026-W12 199.
+      Largest week-over-week increase in consumption: 2026-W11 (+44 Wh/km).
+    must_contain:
+      - ["W11", "week 11"]
+      - ["44"]
+
+  - id: overheat_precursor
+    query: What happened before the battery overheating warning?
+    evidence: |
+      14:03:10 coolant pump duty 18 %
+      14:08:22 coolant pump duty 0 %  (pump stalled)
+      14:31:47 pack temperature 61 C
+      14:31:47 overheat warning raised
+    must_contain:
+      - ["pump"]
+      - ["14:08", "8:22", "stall"]
+    must_not_contain: ["brake", "tyre", "tire"]
+
+  - id: city_vs_highway
+    query: Compare energy consumption between city and highway driving.
+    evidence: |
+      City: 159 Wh/km over 412 km at mean 30 kph.
+      Highway: 177 Wh/km over 688 km at mean 110 kph.
+    must_contain:
+      - ["159"]
+      - ["177"]
+      - ["highway"]
+
+  - id: range_reduction_cause
+    query: Why has my driving range reduced over the last two weeks?
+    evidence: |
+      Mean ambient temperature fell from 18 C to -6 C between W10 and W12.
+      HVAC power rose from 1.0 kW to 6.3 kW (setpoint 22-23 C).
+      Consumption rose from 148 Wh/km to 262 Wh/km.
+      No battery fault codes. Tyre pressures nominal.
+    must_contain:
+      - ["temperature", "cold"]
+      - ["HVAC", "heating"]

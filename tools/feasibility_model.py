@@ -358,6 +358,49 @@ def model_size_sweep(tier: Tier, path: PathSpec) -> dict[str, dict]:
     return out
 
 
+def decision_boundary(tier: Tier, path: PathSpec) -> dict:
+    """Where the time actually goes, and what a model must do to meet target.
+
+    Written because "Tier C takes 8 s" is not actionable: it does not say which
+    half to attack. Splitting prefill from decode shows that on a constrained
+    tier the *decode* side dominates, so shrinking the prompt cannot rescue the
+    path - only a smaller or faster-decoding model can.
+
+    The two "necessary conditions" are the useful output: they are thresholds a
+    candidate model must clear, independent of every other assumption. A model
+    that misses either one cannot meet the target on this tier no matter how
+    good the rest of the system is.
+    """
+    if not path.needs_llm:
+        return {"needs_llm": False, "pipeline_ms": path.pipeline_ms,
+                "status": STATUS_DERIVED}
+
+    if tier.measured_prefill_tps is None or tier.measured_decode_tps is None:
+        return {"needs_llm": True, "status": STATUS_TARGET}
+
+    prefill_ms = path.uncached_prefill_tokens / tier.measured_prefill_tps * 1000.0
+    decode_ms = path.output_tokens / tier.measured_decode_tps * 1000.0
+    total_ms = path.pipeline_ms + prefill_ms + decode_ms
+    llm_budget_ms = TARGET_LATENCY_MS - path.pipeline_ms
+
+    return {
+        "needs_llm": True,
+        "path": path.key,
+        "prefill_ms": round(prefill_ms),
+        "decode_ms": round(decode_ms),
+        "pipeline_ms": path.pipeline_ms,
+        "total_ms": round(total_ms),
+        "prefill_share": round(prefill_ms / total_ms, 3),
+        "decode_share": round(decode_ms / total_ms, 3),
+        "llm_budget_ms": round(llm_budget_ms),
+        "min_prefill_tps_if_decode_free": round(
+            path.uncached_prefill_tokens / (llm_budget_ms / 1000.0), 1),
+        "min_decode_tps_if_prefill_free": round(
+            path.output_tokens / (llm_budget_ms / 1000.0), 1),
+        "status": tier.latency_status,
+    }
+
+
 def report() -> dict:
     tiers = derive_tiers()
     plan = StoragePlan()
@@ -405,6 +448,7 @@ def report() -> dict:
         "storage_plan": asdict(plan),
         "bandwidth_crosscheck": bandwidth_crosscheck(),
         "tier_c_model_sweep": model_size_sweep(tc_tier, BY_KEY["P1"]),
+        "tier_c_decision_boundary": decision_boundary(tc_tier, BY_KEY["P1"]),
     }
 
 
@@ -491,6 +535,26 @@ def main() -> None:
     print("\n    Projected prefill ([D], scales ~1/params):")
     for k, v in bc["projected_prefill_tps_on_pi5"].items():
         print(f"      {k:22s} {v:>7} tok/s")
+
+    db = r["tier_c_decision_boundary"]
+    print("\n-- Where the Tier C time goes " + "-" * (W - 31))
+    if db.get("needs_llm") and "total_ms" in db:
+        print(f"    path {db['path']} on Tier C, best available model")
+        print(f"      prefill  {db['prefill_ms']:>6} ms  {db['prefill_share']:>6.1%}")
+        print(f"      decode   {db['decode_ms']:>6} ms  {db['decode_share']:>6.1%}")
+        print(f"      pipeline {db['pipeline_ms']:>6} ms")
+        print(f"      TOTAL    {db['total_ms']:>6} ms   {db['status']}")
+        print("\n    A candidate model must clear BOTH of these to meet the target")
+        print("    on this tier, regardless of anything else in the system:")
+        print(f"      prefill >= {db['min_prefill_tps_if_decode_free']:>5} tok/s "
+              "(even if decode were free)")
+        print(f"      decode  >= {db['min_decode_tps_if_prefill_free']:>5} tok/s "
+              "(even if prefill were free)")
+        print("\n    Decode dominates, so trimming the prompt cannot rescue this")
+        print("    path - only a faster-decoding model, or a path that skips the")
+        print("    model, can. See docs/10-tierc-latency-strategy.md.")
+    else:
+        print("    [T] unavailable until Tier C throughput is measured")
 
     p1 = r["paths"]["P1"]
     print(f"\n-- Tier C model sweep, path P1 ({p1['spec']}) " + "-" * (W - 40))

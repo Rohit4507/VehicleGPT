@@ -215,6 +215,7 @@ Two design decisions worth flagging, both forced by contact with the real DBC:
 | 06 | [Hardware feasibility](docs/06-hardware-feasibility.md) | Latency budgets, memory envelopes, storage math, risk of extrapolation |
 | 07 | [Risk register](docs/07-risk-register.md) | 16 risks with likelihood, impact, mitigation, owner |
 | 08 | [Decisions required](docs/08-decisions-required.md) | Ten decisions with a recommendation and a default for each |
+| 10 | [Tier C latency strategy](docs/10-tierc-latency-strategy.md) | Where the 8 s actually goes (61 % is decode, not prefill), the two thresholds a model must clear, and the routing change that answers the Tier C objection |
 
 ### Verifying the numbers
 
@@ -231,6 +232,18 @@ make specs       # the canonical P0-P3 spec table
 `make check` is deliberately dependency-free so CI can verify the documented
 numbers on a bare Python install. The data plane needs `cantools`,
 `python-can`, `numpy` and `PyYAML`, and runs in a separate CI job.
+
+To replace the Tier C projection with a measurement, run the bake-off on
+hardware that can hold the weights:
+
+```bash
+python3 tools/phase0/bakeoff.py --required-only          # what a model must do
+python3 tools/phase0/bakeoff.py --models ~/models/*.gguf --eval
+```
+
+It has deliberately **not** been run: the development sandbox cannot reach
+Hugging Face. See [doc 10](docs/10-tierc-latency-strategy.md) for what the
+result would and would not settle.
 
 | File | Role |
 |---|---|
