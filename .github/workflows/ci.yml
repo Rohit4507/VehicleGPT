@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Fast and dependency-free: the feasibility model and the docs linter are
+  # stdlib-only by design, so this job works on a bare Python install and
+  # catches the path-spec and claim-tagging regressions in seconds.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Feasibility model runs
+        run: python3 tools/feasibility_model.py
+
+      - name: Feasibility model emits valid JSON
+        run: python3 tools/feasibility_model.py --json > /tmp/model.json
+
+      - name: Docs are consistent with tools/paths.py
+        run: python3 tools/check_docs.py
+
+      - name: Consistency tests
+        run: python3 -m unittest discover -s tests -p "test_consistency.py" -v
+
+  # The data plane: DBC parsing, CAN encode/decode round-trip, scenario
+  # semantics, and the read-only safety property.
+  dataplane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install data-plane dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e ".[dev]"
+
+      - name: Vendor DBC matches its generator
+        run: python3 tools/make_vendor_dbc.py --check
+
+      - name: Data-plane tests
+        run: python3 -m pytest tests -q
+
+      - name: Lint
+        run: python3 -m ruff check .
