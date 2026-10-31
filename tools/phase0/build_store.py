@@ -97,6 +97,7 @@ def build(db_path: Path, days: int, via_can: bool, seed_jitter: int = 0) -> dict
         "events": total_events,
         "segments": derived["segments"],
         "daily_rows": derived["days"],
+        "cards": derived.get("cards", 0),
         "size_mb": round(db_path.stat().st_size / 1e6, 2),
         "build_s": round(time.monotonic() - t0, 2),
         "now_epoch_s": program_end_epoch_s(days),
@@ -130,6 +131,7 @@ def main() -> int:
         print(f"events       {stats['events']:,}")
         print(f"segments     {stats['segments']:,}")
         print(f"daily rows   {stats['daily_rows']}")
+        print(f"cards        {stats['cards']}  (searchable episodes)")
         print(f"build time   {stats['build_s']} s")
     return 0
 

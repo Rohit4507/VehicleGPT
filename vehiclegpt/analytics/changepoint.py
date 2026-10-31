@@ -279,6 +279,47 @@ def segments(values, penalty: float | None = None, min_segment: int = MIN_SEGMEN
     return out
 
 
+def sustained_below(series, threshold: float, min_s: float
+                   ) -> tuple[int, float, bool] | None:
+    """First time a series stays at or below ``threshold`` for ``min_s`` seconds.
+
+    ``series`` is a list of ``(timestamp_ns, value)`` pairs. Returns
+    ``(start_ns, duration_s, ended)`` or ``None``.
+
+    ``ended`` says whether the excursion was still in progress at the last
+    sample. Without it a caller cannot tell "the pump was off for 14 minutes" from
+    "the pump was off when the recording stopped", and the first is a fact while
+    the second is only a lower bound.
+
+    This is not an anomaly score. A coolant pump that toggles on and off has
+    residuals as large as the stall itself, so an outlier detector cannot pick
+    out the moment it stopped *for good* - it sees an unusually large value, of
+    which there were dozens already. Persistence is what distinguishes a failure
+    from a duty cycle, and persistence needs the timestamps, not the scores.
+    """
+    if len(series) < 2:
+        return None
+    run_start: int | None = None
+    for ts, value in series:
+        ts = int(ts)
+        if value <= threshold:
+            if run_start is None:
+                run_start = ts
+        elif run_start is not None:
+            # The run just ended; report its whole length, not the moment it
+            # became provable. Returning the proof time made a 15-minute stall
+            # read as "1 minute" - true only in the sense that one minute was
+            # enough to be sure.
+            if (ts - run_start) / 1e9 >= min_s:
+                return run_start, (ts - run_start) / 1e9, True
+            run_start = None
+    if run_start is not None:
+        duration = (int(series[-1][0]) - run_start) / 1e9
+        if duration >= min_s:
+            return run_start, duration, False
+    return None
+
+
 def first_change(values, penalty: float | None = None,
                  min_segment: int = MIN_SEGMENT) -> int | None:
     """Index where the final segment begins, or ``None`` if the series is flat.

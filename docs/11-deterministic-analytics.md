@@ -316,7 +316,67 @@ climbing 56 → 77 C in 2 C steps between 17:48 and 17:56, and flags the peak at
   margin but rare in combination is missed, and the test measures that gap
   against IsolationForest rather than claiming the robust score is better.
 
-## 11.8 What this layer does not do
+## 11.8 Episode cards and retrieval
+
+Retrieval searches cards, not samples and not events. A sample is too small to be
+an answer ("coolant pump = 0 at 17:35:04") and an event row is too small in a
+different way: one overheating incident is four rows in the store and one memory
+for the driver. A card is the middle - a bounded stretch of behaviour with a
+narrative, the signals it touched, a severity, and provenance pointers back to
+the rows that justify it. They are built in the same pass as segments and
+rollups, so `make store` produces them.
+
+```
+event ─┐
+       ├─▶ episodes.distill ─▶ card ─▶ card_fts (FTS5, porter)
+daily ─┘                              │
+                          retrieval.search(text) ─▶ bm25 ranking
+```
+
+Four things went wrong on the way, and each is now a test:
+
+- **Context that is merely co-located is not context.** The first version
+  scanned every "interesting" signal for every episode, so the ADAS card cited
+  cell imbalance - a sentence that reads fine and means nothing. Signals are now
+  mapped to event families, and an ADAS episode has no battery signals at all.
+- **A stall is not an outlier.** The coolant pump toggles on and off for minutes
+  before it fails, so its pre-stall swings are already extreme and no outlier
+  score can pick out the moment it stopped *for good*. Persistence is the
+  signature. The pump therefore gets `changepoint.sustained_below` - the same
+  primitive Q4's stall detector uses, now shared rather than duplicated in two
+  places.
+- **A duration is not a proof time.** `sustained_below` returned the moment the
+  stall became *provable* (one minute), so the card read "stayed off for 1
+  minutes" for a twenty-minute stall. It now returns the whole run, and a third
+  field saying whether the run had ended before the data did - because "off for
+  22 minutes" is a fact and "off when the recording stopped" is only a bound.
+- **Stopwords were doing real damage.** With three cards, BM25's inverse document
+  frequency has nothing to work with, so "when did the coolant pump fail" matched
+  the consumption card on the words "when" and "the". A small stopword list fixed
+  it; IDF does the same job once the corpus is large, and the two compose.
+
+**The query is data, not syntax** - the same principle as the DSL. FTS5 has its
+own language (`NEAR`, `AND`, `*`, `:`, quoted phrases), so passing user text into
+`MATCH` lets that language through. Every token is quoted and joined with OR, and
+a token of only stopwords expands to nothing rather than to everything.
+
+### On not reporting recall@8
+
+Gate G2 asks for recall@8 ≥ 85 % on a 100-query set. **No such number is
+reported here.** With three cards on the shipped store, recall@8 is 1.0 for any
+query that matches anything, which measures the corpus rather than the retriever.
+What is tested instead is that the mechanism ranks correctly and that hostile
+input is inert; the recall figure needs a richer scenario corpus and real
+queries, and it stays open rather than being filled in with a number that would
+not mean what it looks like.
+
+The dense half of hybrid retrieval is likewise **not implemented**: it needs
+`bge-small-en-v1.5` and HuggingFace is unreachable from the build sandbox.
+`reciprocal_rank_fusion` is written and tested against synthetic rankings so the
+dense side is a plug-in, but nothing in this repository is measured on an index
+that does not exist.
+
+## 11.9 What this layer does not do
 
 - **It does not parse free text.** `classify()` is a keyword matcher over five
   known shapes. A paraphrase it does not recognise escalates rather than

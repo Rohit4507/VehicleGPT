@@ -330,5 +330,9 @@ def rebuild(conn: sqlite3.Connection) -> dict[str, int]:
     n_seg = build_segments(conn)
     n_daily = build_daily(conn)
     create_views(conn)
+    # Cards depend on the views and on the daily rollup, so they come last.
+    from vehiclegpt.analytics.retrieval import build_cards
+
+    n_cards = build_cards(conn)
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('rebuilt_at', datetime('now'))")
-    return {"segments": n_seg, "days": n_daily}
+    return {"segments": n_seg, "days": n_daily, "cards": n_cards}

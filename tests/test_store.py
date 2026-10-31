@@ -183,4 +183,4 @@ class TestRebuild:
 
     def test_empty_store_rebuilds_without_error(self, tmp_path):
         conn = make_store(tmp_path)
-        assert db.rebuild(conn) == {"segments": 0, "days": 0}
+        assert db.rebuild(conn) == {"segments": 0, "days": 0, "cards": 0}

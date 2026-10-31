@@ -91,3 +91,31 @@ CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Episode cards: the searchable unit. Derived from `event` and `daily`, rebuilt
+-- by the same pass that builds segments and rollups. See docs/11 §11.8.
+CREATE TABLE IF NOT EXISTS card (
+    id        INTEGER PRIMARY KEY,
+    kind      TEXT    NOT NULL,          -- incident | trend
+    start_ns  INTEGER NOT NULL,
+    end_ns    INTEGER NOT NULL,
+    day       TEXT    NOT NULL,
+    severity  TEXT    NOT NULL,
+    title     TEXT    NOT NULL,
+    body      TEXT    NOT NULL,
+    signals   TEXT    NOT NULL,          -- comma-separated paths and event kinds
+    evidence  TEXT    NOT NULL           -- JSON provenance pointers
+);
+
+CREATE INDEX IF NOT EXISTS ix_card_start ON card(start_ns);
+CREATE INDEX IF NOT EXISTS ix_card_kind  ON card(kind);
+
+-- External-content FTS5: the index stores no copy of the text, so it costs only
+-- the inverted index. `porter` stemming lets "disengage" match "disengaged".
+CREATE VIRTUAL TABLE IF NOT EXISTS card_fts USING fts5(
+    title,
+    body,
+    content='card',
+    content_rowid='id',
+    tokenize='porter unicode61'
+);

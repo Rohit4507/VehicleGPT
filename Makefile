@@ -1,4 +1,4 @@
-.PHONY: help check check-data model specs docs test test-data demo store ask storage trends emulate bakeoff bakeoff-required
+.PHONY: help check check-data model specs docs test test-data demo store ask storage trends episodes emulate bakeoff bakeoff-required
 
 help:
 	@echo "make check      - docs + feasibility model + stdlib tests (no deps needed)"
@@ -57,6 +57,10 @@ store:
 
 ask: store
 	@python3 tools/phase0/ask.py --db $(DB) --all
+
+# The searchable episode cards, and a lexical search over them.
+episodes: store
+	@python3 tools/phase0/episodes.py --db $(DB) --list
 
 # Where a series changed level, and which readings broke away from it.
 trends: store

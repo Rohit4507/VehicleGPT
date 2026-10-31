@@ -25,7 +25,7 @@ import datetime as dt
 import sqlite3
 from dataclasses import dataclass, field
 
-from vehiclegpt.analytics import dsl
+from vehiclegpt.analytics import changepoint, dsl
 
 EVIDENCE_KIND_PREFIX = "fault."
 
@@ -284,15 +284,8 @@ def _sustained_stall(series: list[tuple[int, float]],
     persist separates a stall from a traffic stop - and unlike reading the
     simulator's injected-fault event, it works on real vehicle data.
     """
-    zero_since: int | None = None
-    for ts, value in series:
-        if value > threshold_pct:
-            zero_since = None
-        elif zero_since is None:
-            zero_since = ts
-        elif (ts - zero_since) / 1e9 >= min_s:
-            return zero_since
-    return None
+    found = changepoint.sustained_below(series, threshold_pct, min_s)
+    return None if found is None else found[0]
 
 
 def before_warning(conn: sqlite3.Connection, lookback_min: int = 60) -> Answer:
