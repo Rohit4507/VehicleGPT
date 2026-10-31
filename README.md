@@ -203,6 +203,66 @@ Two design decisions worth flagging, both forced by contact with the real DBC:
 
 ---
 
+## The deterministic layer (Phase 2)
+
+Four of the five questions in the brief are filter, aggregate or sequence
+questions. They are answered by SQL, not by a language model — which is both
+faster and exactly right: a model adds latency and a chance of printing the
+wrong count, and nothing else.
+
+```bash
+make ask      # build 14 days of data, then answer all five questions
+make emulate  # why a laptop pinned to 2 cores is still not a Tier C device
+```
+
+```
+Q: What happened before the battery overheating warning?
+   3 questions answered deterministically; slowest 2.3 ms (target 2000 ms)
+
+   Before the battery overheating warning: the coolant pump stopped for good
+   at 17:35 UTC, 15 minutes earlier; pack temperature passed 55 C at 17:48;
+   the overheating warning was raised at 17:50 UTC.
+```
+
+| Layer | File | What it does |
+|---|---|---|
+| 14-day program | [`sim/program.py`](sim/program.py) | Seeded calendar of drives containing a cold snap, a pump failure and ADAS disengagements |
+| Store | [`vehiclegpt/store/db.py`](vehiclegpt/store/db.py) | SQLite, 1 Hz, WAL; `segment` and `daily` derived and rebuilt, never patched |
+| Views | [`vehiclegpt/analytics/views.sql`](vehiclegpt/analytics/views.sql) | Distance-weighted rolling windows, regime aggregates, event sequences |
+| Handlers | [`vehiclegpt/analytics/queries.py`](vehiclegpt/analytics/queries.py) | Five answerers plus rule-based intent routing |
+
+Two rules are enforced by tests rather than trusted to discipline. `fault.*`
+events are simulator metadata and are **never** used as evidence — the pump
+stall in Q4 is found by noticing the signal stopped, which is what a real
+vehicle would give you. And consumption is always `SUM(Wh)/SUM(km)`, never the
+average of per-sample Wh/km, which would weight a stationary second the same as
+a motorway one.
+
+---
+
+## Emulating the target hardware honestly
+
+`make emulate` measures the host and reports the correction to Tier C. On the
+development machine it reports **3.5× the bandwidth** of a Raspberry Pi 5:
+
+| | Host (2 cores pinned) | Tier C anchor |
+|---|---|---|
+| Single-stream bandwidth | 36.7 GB/s | 10.47 GB/s `[D]` |
+| Implied decode, 0.6B Q4 | 88.5 tok/s `[D]` | 25.26 tok/s `[M]` |
+
+This is the trap `taskset` and `cpulimit` set. They reproduce **core count** and
+**CPU time**, but LLM decode is bandwidth-bound and they do not touch memory
+bandwidth. A two-core laptop still has the laptop's memory controller, so it
+will decode several times faster than a two-core Cortex-A53. Reporting that as
+"Tier C" would repeat the extrapolation error this project exists to fix, in a
+more convincing costume.
+
+So the tool never claims emulation. `--calibrate` gives the ratio; the harness
+stamps every result with the machine it ran on; and the correction to Tier C
+stays tagged `[D]`.
+
+---
+
 ## Documents
 
 | # | Document | What it answers |
@@ -216,6 +276,7 @@ Two design decisions worth flagging, both forced by contact with the real DBC:
 | 07 | [Risk register](docs/07-risk-register.md) | 16 risks with likelihood, impact, mitigation, owner |
 | 08 | [Decisions required](docs/08-decisions-required.md) | Ten decisions with a recommendation and a default for each |
 | 10 | [Tier C latency strategy](docs/10-tierc-latency-strategy.md) | Where the 8 s actually goes (61 % is decode, not prefill), the two thresholds a model must clear, and the routing change that answers the Tier C objection |
+| 11 | [Deterministic analytics](docs/11-deterministic-analytics.md) | The layer that answers four of the five brief questions with SQL in under 3 ms, and the three defects its tests caught |
 
 ### Verifying the numbers
 

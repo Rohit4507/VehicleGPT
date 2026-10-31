@@ -68,7 +68,7 @@ def build() -> Database:
             sig("VCU_rangeEstimate_km", 16, 16, scale=0.1, minimum=0, maximum=1000, unit="km"),
             sig("HVAC_power_W", 32, 14, scale=5, minimum=0, maximum=8000, unit="W"),
             sig("HVAC_setpoint_C", 46, 8, scale=0.5, minimum=0, maximum=60, unit="C"),
-            sig("VCU_regenPower_W", 54, 10, scale=10, minimum=0, maximum=10230, unit="W"),
+            sig("VCU_regenPower_W", 54, 10, scale=100, minimum=0, maximum=102300, unit="W"),
         ]))
 
     return db

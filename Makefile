@@ -1,4 +1,4 @@
-.PHONY: help check check-data model specs docs test test-data demo bakeoff bakeoff-required
+.PHONY: help check check-data model specs docs test test-data demo store ask emulate bakeoff bakeoff-required
 
 help:
 	@echo "make check      - docs + feasibility model + stdlib tests (no deps needed)"
@@ -9,6 +9,9 @@ help:
 	@echo "make test       - stdlib tests only (fast, dependency-free)"
 	@echo "make test-data  - data-plane tests (needs cantools, python-can, numpy, PyYAML)"
 	@echo "make demo       - run the CAN round-trip demo on a virtual bus"
+	@echo "make store      - build the 14-day store from the simulated program"
+	@echo "make ask        - answer the five brief questions from the store"
+	@echo "make emulate    - calibrate this host against the Tier C envelope"
 	@echo "make bakeoff    - model bake-off; set MODELS='a.gguf b.gguf'"
 
 check: docs model test
@@ -45,3 +48,16 @@ bakeoff-required:
 # MODELS='~/models/a.gguf ~/models/b.gguf' make bakeoff
 bakeoff:
 	@python3 tools/phase0/bakeoff.py --models $(MODELS) --eval
+
+# Deterministic layer: simulate 14 days, store it, answer the brief's questions.
+DB ?= /tmp/vehiclegpt.db
+
+store:
+	@python3 tools/phase0/build_store.py --db $(DB) --days 14
+
+ask: store
+	@python3 tools/phase0/ask.py --db $(DB) --all
+
+# Why a laptop pinned to two cores is still not a Tier C device.
+emulate:
+	@python3 tools/phase0/emulate.py --calibrate

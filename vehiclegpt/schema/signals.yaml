@@ -332,7 +332,7 @@ signals:
   - path: energy.regen_power
     unit: W
     min: 0
-    max: 10230
+    max: 102300
     rate_hz: 10
     tier: hot
     deadband: 20

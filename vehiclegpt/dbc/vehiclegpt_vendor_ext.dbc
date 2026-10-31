@@ -55,7 +55,7 @@ BO_ 1697 BMS_packThermal: 8 BMS
  SG_ BMS_cellTempSpread_C : 0|8@1+ (0.5,0) [0|60] "C" Vector__XXX
 
 BO_ 1698 VCU_energy: 8 VCU
- SG_ VCU_regenPower_W : 54|10@1+ (10,0) [0|10230] "W" Vector__XXX
+ SG_ VCU_regenPower_W : 54|10@1+ (100,0) [0|102300] "W" Vector__XXX
  SG_ HVAC_setpoint_C : 46|8@1+ (0.5,0) [0|60] "C" Vector__XXX
  SG_ HVAC_power_W : 32|14@1+ (5,0) [0|8000] "W" Vector__XXX
  SG_ VCU_rangeEstimate_km : 16|16@1+ (0.1,0) [0|1000] "km" Vector__XXX

@@ -52,8 +52,8 @@ ROLLING_RESISTANCE_COEFF = 0.010
 DRIVETRAIN_EFFICIENCY = 0.90
 AUX_BASE_W = 350.0                  # compute, lighting, electronics
 MAX_HVAC_W = 8000.0
-MAX_REGEN_W = 10230.0               # matches VCU_regenPower_W in the vendor DBC
-REGEN_W_PER_MS2 = 22_000.0          # ~190 kW/m/s^2 available from the motors
+MAX_REGEN_W = 80000.0               # ~80 kW recuperation; matches VCU_regenPower_W range
+REGEN_W_PER_MS2 = 30_000.0          # ~30 kW per m/s^2 of deceleration
 
 SPEED_TARGETS = {Mode.IDLE: 0.0, Mode.CITY: 32.0, Mode.HIGHWAY: 110.0}
 
