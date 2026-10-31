@@ -17,17 +17,23 @@ CREATE TABLE IF NOT EXISTS signal (
     tier    TEXT NOT NULL
 );
 
--- L1 hot samples, decimated to 1 Hz. ts_ns is nanoseconds since the Unix epoch
--- so that date arithmetic can use plain integer comparisons.
+-- L1 hot samples, decimated to 1 Hz by vehiclegpt/store/decimate.py.
+--
+-- Storage choices, each measured rather than assumed (docs/06 §7):
+--   * WITHOUT ROWID with PRIMARY KEY (signal_id, ts_s) makes the table its own
+--     index, removing a rowid pointer and a duplicate B-tree. 65.2 -> 24.2 B/row.
+--   * ts_s, not ts_ns: a nanosecond epoch needs a 9-byte varint, a seconds epoch
+--     needs 5. 24.2 -> 19.3 B/row.
+--   * The old standalone index on (ts_ns) was 30% of the database and was never
+--     used: every query filters by signal first. Dropped.
+-- Together: 65.2 -> 19.3 bytes per sample, a 3.4x reduction with no loss.
 CREATE TABLE IF NOT EXISTS sample (
-    ts_ns     INTEGER NOT NULL,
+    ts_s      INTEGER NOT NULL,            -- seconds since the Unix epoch
     signal_id INTEGER NOT NULL REFERENCES signal(id),
     value     REAL    NOT NULL,
-    quality   INTEGER NOT NULL DEFAULT 0   -- 0 = ok, 1 = out of bounds
-);
-
-CREATE INDEX IF NOT EXISTS ix_sample_sig_ts ON sample(signal_id, ts_ns);
-CREATE INDEX IF NOT EXISTS ix_sample_ts     ON sample(ts_ns);
+    quality   INTEGER NOT NULL DEFAULT 0,  -- 0 = ok, 1 = out of bounds
+    PRIMARY KEY (signal_id, ts_s)
+) WITHOUT ROWID;
 
 -- Discrete events. These are what "show me all X from yesterday" queries hit.
 CREATE TABLE IF NOT EXISTS event (

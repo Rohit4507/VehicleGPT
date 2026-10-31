@@ -31,22 +31,28 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from sim.generator import RATE_HZ, Simulation  # noqa: E402
+from sim.generator import Simulation  # noqa: E402
 from sim.program import program_days, program_end_epoch_s  # noqa: E402
-from vehiclegpt.schema.registry import registry  # noqa: E402
+from vehiclegpt.schema.registry import Registry, registry  # noqa: E402
 from vehiclegpt.store import db  # noqa: E402
+from vehiclegpt.store.decimate import decimate  # noqa: E402
 
-DECIMATE = max(1, int(round(RATE_HZ)))    # 10 Hz -> 1 Hz
 
+def samples_from(sim: Simulation, start_epoch_s: float,
+                 reg: Registry) -> list[db.SampleRow]:
+    """Decimate one drive per signal policy and stamp it with wall-clock time.
 
-def samples_from(sim: Simulation, start_epoch_s: float) -> list[db.SampleRow]:
-    """Decimate one drive to 1 Hz and stamp it with wall-clock nanoseconds."""
-    rows: list[db.SampleRow] = []
+    Each signal is decimated on its own policy (see store/decimate.py) rather
+    than by taking every Nth tick, so a flag that pulses between ticks survives
+    and a slow signal that never changes costs one row instead of one per second.
+    """
     base_ns = int(start_epoch_s * 1e9)
-    for i in range(0, sim.n, DECIMATE):
-        ts_ns = base_ns + int(round(sim.t_s[i] * 1e9))
-        for path, series in sim.truth.items():
-            rows.append(db.SampleRow(ts_ns=ts_ns, path=path, value=float(series[i])))
+    ts_ns = [base_ns + int(round(t * 1e9)) for t in sim.t_s]
+    rows: list[db.SampleRow] = []
+    for path, series in sim.truth.items():
+        kept = decimate(ts_ns, [float(v) for v in series], reg[path])
+        rows.extend(db.SampleRow(ts_ns=s.ts_s * 10**9, path=path, value=s.value)
+                    for s in kept)
     return rows
 
 
@@ -67,12 +73,15 @@ def build(db_path: Path, days: int, via_can: bool, seed_jitter: int = 0) -> dict
         db_path.unlink()
 
     t0 = time.monotonic()
-    total_samples = total_events = 0
+    total_samples = total_events = total_raw = 0
     with db.store(db_path) as conn:
         ids = db.ensure_signals(conn, signals)
         for drive in program_days(days):
             sim = generate_sim(drive.scenario, seed_jitter)
-            total_samples += db.write_samples(conn, samples_from(sim, drive.start_epoch_s), ids)
+            rows = samples_from(sim, drive.start_epoch_s, reg)
+            raw = sim.n * len(sim.truth)
+            total_raw += raw
+            total_samples += db.write_samples(conn, rows, ids)
             total_events += db.write_events(conn, events_from(sim, drive.start_epoch_s))
         conn.commit()
         derived = db.rebuild(conn)
@@ -83,6 +92,8 @@ def build(db_path: Path, days: int, via_can: bool, seed_jitter: int = 0) -> dict
         "days": days,
         "via_can": via_can,
         "samples": n_rows,
+        "raw_ticks": total_raw,
+        "bytes_per_sample": round(db_path.stat().st_size / n_rows, 1) if n_rows else 0,
         "events": total_events,
         "segments": derived["segments"],
         "daily_rows": derived["days"],

@@ -31,6 +31,11 @@ DAY_NS = 86_400 * 10**9
 
 @dataclass(frozen=True)
 class SampleRow:
+    """One sample at the API boundary.
+
+    ``ts_ns`` is nanoseconds for precision at the caller, but storage truncates
+    to whole seconds - the table is 1 Hz by design (see decimate.py).
+    """
     ts_ns: int
     path: str
     value: float
@@ -86,11 +91,12 @@ def write_samples(conn: sqlite3.Connection, rows: Iterable[SampleRow],
                   signal_ids: dict[str, int]) -> int:
     """Insert decimated samples. Unknown paths are skipped, not invented."""
     payload = [
-        (r.ts_ns, signal_ids[r.path], r.value, r.quality)
+        (r.ts_ns // 10**9, signal_ids[r.path], r.value, r.quality)
         for r in rows if r.path in signal_ids
     ]
     conn.executemany(
-        "INSERT INTO sample(ts_ns, signal_id, value, quality) VALUES (?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO sample(ts_s, signal_id, value, quality) "
+        "VALUES (?, ?, ?, ?)",
         payload,
     )
     return len(payload)
@@ -128,11 +134,26 @@ def signal_id(conn: sqlite3.Connection, path: str) -> int | None:
 
 
 def _series(conn: sqlite3.Connection, path: str) -> list[tuple[int, float]]:
+    """Full series for a path, as (nanoseconds, value) pairs."""
     sid = signal_id(conn, path)
     if sid is None:
         return []
-    return [(int(r["ts_ns"]), float(r["value"])) for r in conn.execute(
-        "SELECT ts_ns, value FROM sample WHERE signal_id = ? ORDER BY ts_ns", (sid,))]
+    return [(int(r["ts_s"]) * 10**9, float(r["value"])) for r in conn.execute(
+        "SELECT ts_s, value FROM sample WHERE signal_id = ? ORDER BY ts_s", (sid,))]
+
+
+def series_ns(conn: sqlite3.Connection, path: str,
+              lo_ns: int | None = None,
+              hi_ns: int | None = None) -> list[tuple[int, float]]:
+    """Windowed series, in nanoseconds. The single reader for sample data."""
+    sid = signal_id(conn, path)
+    if sid is None:
+        return []
+    lo = 0 if lo_ns is None else lo_ns // 10**9
+    hi = 2**62 if hi_ns is None else hi_ns // 10**9
+    return [(int(r["ts_s"]) * 10**9, float(r["value"])) for r in conn.execute(
+        "SELECT ts_s, value FROM sample WHERE signal_id = ? AND ts_s BETWEEN ? AND ? "
+        "ORDER BY ts_s", (sid, lo, hi))]
 
 
 def classify_regime(speed_kph: float) -> str:
@@ -284,7 +305,7 @@ def build_daily(conn: sqlite3.Connection) -> int:
 def _day_mean(conn: sqlite3.Connection, path: str, day: str) -> float | None:
     row = conn.execute(
         "SELECT AVG(s.value) AS v FROM sample s JOIN signal g ON g.id = s.signal_id "
-        "WHERE g.path = ? AND date(s.ts_ns / 1000000000, 'unixepoch') = ?",
+        "WHERE g.path = ? AND date(s.ts_s, 'unixepoch') = ?",
         (path, day)).fetchone()
     return None if row["v"] is None else round(float(row["v"]), 2)
 
@@ -295,7 +316,7 @@ def _day_range(conn: sqlite3.Connection, path: str, day: str) -> tuple[float | N
         return (None, None)
     rows = [float(r["value"]) for r in conn.execute(
         "SELECT value FROM sample WHERE signal_id = ? "
-        "AND date(ts_ns / 1000000000, 'unixepoch') = ? ORDER BY ts_ns", (sid, day))]
+        "AND date(ts_s, 'unixepoch') = ? ORDER BY ts_s", (sid, day))]
     return (round(rows[0], 2), round(rows[-1], 2)) if rows else (None, None)
 
 

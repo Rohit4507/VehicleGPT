@@ -43,12 +43,43 @@ SQL views  (vehiclegpt/analytics/views.sql)
 query handlers  (vehiclegpt/analytics/queries.py)  ->  Answer(text, data, evidence)
 ```
 
-The store builds in **4.4 s** for 14 days, 686 400 samples and 305 segments,
-and occupies 45 MB. Doc 06 projected 103 MB for 28 days `[D]`; this stores 26
-signals uncompressed at 1 Hz rather than the projected mix, so the agreement is
-ballpark, not exact.
+The store builds in **7.0 s** for 14 days, 426 373 samples and 281 segments,
+and occupies 9.3 MB. Samples are decimated per signal on write, so this is
+**22.0 B/sample** against the 65.4 B/sample the same data cost before the
+schema work. Doc 06 projected 103 MB for 28 days `[D]`; at the driving duty
+cycle this store actually sees that is 18.7 MB, but the projection's own
+workload (15 signals at 1 Hz, 24/7) would cost ~799 MB at this density — see
+doc 06 §7 for why the two are not comparable and which one is being claimed.
 
 ---
+
+### How samples get decimated
+
+The storage key is `(signal_id, ts_s)` — whole seconds — so the reduction has to
+happen on write. Each signal gets a policy from `vehiclegpt/store/decimate.py`:
+
+| Policy | Applies to | Rule |
+|---|---|---|
+| `LAST` | ordinary continuous signals | last sample in each second |
+| `ON_CHANGE` | `slow`-tier signals with a deadband | keep a value only when it moves beyond the deadband, **plus a keyframe every 60 s** |
+| `ANY` | flags (declared range 0–1) | max per second, then collapse to transitions |
+
+Two of these rules exist because the obvious version was wrong in a way that
+row counts did not show:
+
+- **Bucketing by the input rate is not decimation.** The first version bucketed
+  at `1e9 / rate_hz` — 100 ms at 10 Hz — and looked correct because
+  `INSERT OR REPLACE` on a one-second key silently swallowed the duplicates. The
+  fingerprint is `rows / distinct_seconds == 1.0` for every signal, which is
+  worth asserting directly rather than reading the total.
+- **Point-sampling a flag deletes the event.** Taking the last value in a second
+  turns a 0→1→0 pulse into 0. Flags reduce by max-per-second, then collapse to
+  transitions, so an ADAS disengagement that lasted 0.1 s survives.
+- **On-change without keyframes destroys duration.** A 15-minute coolant-pump
+  stall collapsed to its two endpoints, and the Q4 stall detector — which needs
+  a reading still at zero 60 s later — reported that no stall had occurred. The
+  keyframe bounds every plateau at 60 s, which costs +0.5 % of rows and is
+  covered by an end-to-end test that fails if it is removed.
 
 ## 11.3 What the data actually contains
 
@@ -90,9 +121,20 @@ slowest of the five took **2.3 ms** on this machine.
 > overheating warning was raised at 17:50 UTC.
 
 > **Compare energy consumption between city and highway driving.**
-> City driving averaged 214 Wh/km over 97.5 km at a mean 24 kph. Motorway
-> driving averaged 188 Wh/km over 345.4 km at a mean 105 kph. City driving is
-> the more expensive of the two here, by a factor of 1.14.
+> City driving averaged 263 Wh/km over 97.6 km at a mean 24 kph. Motorway
+> driving averaged 189 Wh/km over 345.4 km at a mean 105 kph. City driving is
+> the more expensive of the two here, by a factor of 1.39.
+> note: energy is attributed per segment, so acceleration across a regime
+> boundary counts toward the segment it started in; a per-second attribution
+> gives a lower city/highway factor
+
+**The factor is methodology-sensitive and the answer says so.** Attributing each
+second's energy to the regime in force during that second gives city 243 Wh/km
+and motorway 205 Wh/km — a factor of **1.18**, not 1.39. Both totals reconcile
+(443.0 km, ~205 Wh/km overall), so the disagreement is purely about which regime
+owns the seconds spent accelerating across a boundary. The direction of the
+answer is robust; the magnitude is not, and a reviewer should be told which
+convention produced the number rather than left to assume.
 
 Every one of these is a single SQL query plus arithmetic. The numbers can be
 checked by hand against `segment` and `daily`.

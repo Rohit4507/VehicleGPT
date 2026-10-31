@@ -63,13 +63,11 @@ def _signal_id(conn: sqlite3.Connection, path: str) -> int | None:
     return None if row is None else int(row["id"])
 
 
-def _series(conn: sqlite3.Connection, path: str, lo_ns: int, hi_ns: int) -> list[tuple[int, float]]:
-    sid = _signal_id(conn, path)
-    if sid is None:
-        return []
-    return [(int(r["ts_ns"]), float(r["value"])) for r in conn.execute(
-        "SELECT ts_ns, value FROM sample WHERE signal_id = ? AND ts_ns BETWEEN ? AND ? "
-        "ORDER BY ts_ns", (sid, lo_ns, hi_ns))]
+def _series(conn: sqlite3.Connection, path: str, lo_ns: int,
+            hi_ns: int) -> list[tuple[int, float]]:
+    from vehiclegpt.store.db import series_ns
+
+    return series_ns(conn, path, lo_ns, hi_ns)
 
 
 def _drive_hours(conn: sqlite3.Connection, lo_ns: int, hi_ns: int) -> float:
@@ -366,7 +364,10 @@ def city_vs_highway(conn: sqlite3.Connection) -> Answer:
         data={"city": city, "highway": hwy, "highway_over_city": round(ratio, 3)},
         evidence=[city, hwy],
         caveats=["regimes are classified from speed thresholds (5 / 80 kph); "
-                 "a slow motorway queue is counted as city"])
+                 "a slow motorway queue is counted as city",
+                 "energy is attributed per segment, so acceleration across a "
+                 "regime boundary counts toward the segment it started in; a "
+                 "per-second attribution gives a lower city/highway factor"])
 
 
 # ---------------------------------------------------------------------------

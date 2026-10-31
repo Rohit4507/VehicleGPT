@@ -349,6 +349,34 @@ and pessimistic for slow ones. **Phase 1 gate G1 requires the measured footprint
 to land within 25 % of this model**, so the assumption gets tested early, not
 assumed forever.
 
+### What the implementation actually costs `[M]`
+
+Gate G1 has now been exercised against the real store
+(`tools/phase0/storage_report.py`, 14 simulated days, 26 signals):
+
+| | Value | Status |
+|---|---|---|
+| Bytes per stored sample | **22.0 B** | `[M]` |
+| Model assumed | 1.2 B/value | `[D]` |
+| Overhead vs model | **18×** | `[D]` |
+| 28 days at the observed 0.52 h/day duty cycle | **18.67 MB** | `[D]` |
+| 28 days at 1 Hz, 24/7, 15 signals — the model's workload | **798.66 MB** | `[D]` |
+| Density needed to fit 103 MB at 1 Hz 24/7 | 2.84 B/sample | `[D]` |
+
+Three schema changes took it from 65.2 to 22.0 B/sample with no loss:
+`WITHOUT ROWID` keyed on `(signal_id, ts_s)`, storing whole seconds rather than
+nanoseconds (a 9-byte varint becomes 5), and dropping a standalone timestamp
+index that was 30 % of the database and never used by any query.
+
+**The important correction:** the 103 MB figure holds for a vehicle driven the
+way the simulation drives it, and it does **not** hold for a continuously
+powered vehicle at 1 Hz. The model's own workload — 15 signals sampled 24/7 —
+would cost about 799 MB at the density this store achieves. The gap is the
+compression the model assumes and the implementation does not perform; quantising
+the value alone recovers only ~15 %, because SQLite row overhead dominates, not
+the value width. Closing it needs either an on-change-plus-keyframe hot tier or a
+columnar layer, and that is now a Phase 1 decision rather than a footnote.
+
 ### Why the naive approach fails
 
 Naively storing all 60 signals at full 50 Hz for 28 days:
@@ -484,7 +512,10 @@ table in the submission; a reviewer can check any row in seconds.
 | 7 | P1 on Tier B is ~1 579 ms | 1 579 ms | **`[D]`** | Claim 3 + canonical P1 spec + assumed 130 ms pipeline. **Not demonstrated on ARM** | Phase 4 gate G4 |
 | 8 | P1 on Tier C is ~8 073 ms | 8 073 ms | **`[D]`** | Claims 5 and 7 stacked. **Weakest latency claim in the repo** | Phase 0 task 0.7 |
 | 9 | SmolLM2-135M fits P1 on Tier C | 1 857 ms | **`[D]`** | Bandwidth model → params → throughput → Tier C. **Three extrapolations deep** | Phase 0 task 0.4 |
-| 10 | 28 days of history costs ~103 MB | 103.17 MB | **`[D]`** | `StoragePlan` assumptions, `hot_bytes_per_value = 1.2 B` unverified | Phase 1 gate G1 |
+| 10 | 28 days of history costs ~103 MB *at 1.2 B/value* | 103.17 MB | **`[D]`** | `StoragePlan` assumptions. **The 1.2 B/value compression is not implemented** | Phase 1 gate G1 |
+| 10b | The implemented store costs 22.0 B/sample | 22.0 B | **`[M]`** | `tools/phase0/storage_report.py` on a built store, 426 373 samples | already measured |
+| 10c | 28 days costs 18.67 MB at the observed driving duty cycle | 18.67 MB | **`[D]`** | Claim 10b × 0.52 h/day, extrapolated | Phase 1 gate G1 |
+| 10d | 28 days at 1 Hz 24/7 would cost ~799 MB | 798.66 MB | **`[D]`** | Claim 10b × 15 signals × 28 days. **This is the workload the model implies** | Phase 1 gate G1 |
 | 11 | Tier A latency | — | **`[T]`** | Nothing. Unmeasured | Phase 0 task 0.3 |
 
 **Status totals: 3 measured, 7 derived, 1 unmeasured.** No claim is at `[M]` for
