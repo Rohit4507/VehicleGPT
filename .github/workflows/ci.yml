@@ -41,7 +41,7 @@ jobs:
       - name: Install data-plane dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install -e ".[dev]"
+          python3 -m pip install -e ".[dev,verify]"
 
       - name: Vendor DBC matches its generator
         run: python3 tools/make_vendor_dbc.py --check

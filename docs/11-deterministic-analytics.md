@@ -233,7 +233,90 @@ be exercised by the model - the deterministic handlers need exactly these five.
 The five are the brief's five questions; a new kind is a deliberate code change
 with its own SQL constant, not something a model can invent at runtime.
 
-## 11.7 What this layer does not do
+## 11.7 Trends and anomalies
+
+Two questions the five answers do not cover, because they are asked about
+*arbitrary* series rather than the five fixed shapes: "when did this level
+change?" and "which readings broke away from it?" Both live behind
+`tools/phase0/trends.py`.
+
+### Change points
+
+`pelt()` is an exact PELT segmentation for a piecewise-constant mean, about
+sixty lines and no dependencies. Writing it rather than importing `ruptures` is
+a decision that has to be justified, so it is: on 300 random piecewise series it
+agrees with `ruptures.Pelt(model="l2")` on the breakpoints **300/300**, and that
+comparison runs as a test whenever the library is installed.
+
+`cusum()` answers the online version. Two things about it were wrong in the
+first implementation and are worth recording:
+
+- **The reference statistics must not include the change.** Standardising with
+  the median of the whole series makes a half-low, half-high series look like a
+  sustained downward excursion for its entire first half, and the detector fires
+  *before* the change it was looking for. Centre and scale now come from a
+  baseline window (a quarter of the series, never more than half).
+- **The false-alarm rate is a measured number, not a claim.** CUSUM is a
+  sequential test; it will cry wolf eventually. `false_alarm_rate()` simulates
+  it: h=4 gives 4.24 alarms per 500 quiet samples, h=5 gives 1.85, h=6 gives
+  0.92. The default is 6, and on 200 simulated series with a 6-sigma step it
+  raised an alarm before the change 12.5 % of the time while detecting 198/200
+  with a median lag of zero.
+
+### Anomaly scores
+
+The score is MAD-based (median absolute deviation, scaled by 1.4826) evaluated
+on residuals, for two reasons that are each a failure mode of the naive version:
+
+- **A spike must not hide itself.** With mean and standard deviation, a single
+  large excursion inflates the very scale used to judge it; the classic z-score
+  saturates near sqrt(n) and, with two spikes, drops below the threshold
+  entirely. The test asserts that the robust score stays above the classic one
+  at 6, 60 and 6000 units.
+- **The local level must be a line, not a median.** A centred rolling median is
+  biased at the ends of a trending series, so a battery warming smoothly
+  produces a large residual at every edge reading - a detector that fires
+  whenever the car is driven normally. The level is therefore a robust linear
+  fit (median of pairwise slopes): a ramp fits exactly and has zero residual,
+  and a spike cannot move a median-of-slopes fit.
+
+### The lesson the tool exists to demonstrate
+
+Consumption per kilometre is only comparable between days that drove a
+comparable distance. On the shipped store the last two days are 7.9 km cold
+trips at 321 Wh/km:
+
+| | change point it reports |
+|---|---|
+| all days | **14 March**, 193.7 → 321.4 Wh/km |
+| days ≥ 10 km (default) | **12 March**, 191.2 → 250.1 Wh/km |
+
+The first answer is confident and wrong: nothing degraded on 14 March, the
+driving pattern changed. The second matches the physical cause - ambient fell
+from 12 C to -4 C on 12 March - and agrees with the independent day-over-day
+result in 11.4. So the tool excludes short days by default and prints how many
+it excluded, because a filter that silently changes the answer is worse than no
+filter.
+
+Run against `battery.cell_temp_max` over the overheat day it finds the level
+climbing 56 → 77 C in 2 C steps between 17:48 and 17:56, and flags the peak at
+17:56:59 (24 C above its local level) and the following morning's reset.
+
+### What it does not do
+
+- **PELT assumes piecewise constant.** A continuous ramp is approximated by
+  steps, which is why the overheat run reports a change every ~90 s while the
+  temperature rises smoothly. That is the model, not a bug, but it should not be
+  read as nine distinct faults.
+- **Statistical significance is not practical significance.** On a smooth
+  signal a 0.1 C wobble scores above eleven sigma: arithmetically right,
+  operationally useless. `min_delta` sets an absolute floor and the default is
+  zero - the domain threshold belongs to the caller, not to this module.
+- **Signals are scored one at a time.** A point that is unremarkable in every
+  margin but rare in combination is missed, and the test measures that gap
+  against IsolationForest rather than claiming the robust score is better.
+
+## 11.8 What this layer does not do
 
 - **It does not parse free text.** `classify()` is a keyword matcher over five
   known shapes. A paraphrase it does not recognise escalates rather than

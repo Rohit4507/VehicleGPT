@@ -93,7 +93,7 @@ correct answers against a scenario with known ground truth. Retrieval recall@8
 |---|---|
 | 2.1 windowed accessors | ✅ four typed views + one compiled statement per window |
 | 2.9 DSL schema, validator, compiler | ✅ five kinds, adversarial suite, mutation-checked |
-| 2.2/2.3 change-point and anomaly scoring | ⬜ next |
+| 2.2/2.3 change-point and anomaly scoring | ✅ PELT (agrees with `ruptures` 300/300), CUSUM with a measured false-alarm rate, MAD scoring on a robust local linear fit |
 | 2.4 `driving_mode` derivation | 🔶 speed thresholds only, no GMM |
 | 2.5 lead-lag / precedence | 🔶 event-level only, and empty on this data by design |
 | 2.6 episode cards | ⬜ |
@@ -102,6 +102,11 @@ correct answers against a scenario with known ground truth. Retrieval recall@8
 The DSL half of G2 is met: all five questions run through the compiled path and
 return byte-identical answers to the pre-refactor handlers. The recall half is
 untouched, and its dense-retrieval component cannot be measured here.
+
+Trends and anomalies (2.2/2.3) are in `tools/phase0/trends.py`. The early
+finding is that the *filter matters more than the detector*: on all days the
+change point is 14 March, on days of comparable length it is 12 March, and only
+the second matches the weather. See doc 11 §11.7.
 
 **This gate is the real milestone.** At G2 you have a working vehicle-analytics
 product that happens to have no AI in it. Everything after is enhancement.

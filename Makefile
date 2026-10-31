@@ -1,4 +1,4 @@
-.PHONY: help check check-data model specs docs test test-data demo store ask storage emulate bakeoff bakeoff-required
+.PHONY: help check check-data model specs docs test test-data demo store ask storage trends emulate bakeoff bakeoff-required
 
 help:
 	@echo "make check      - docs + feasibility model + stdlib tests (no deps needed)"
@@ -57,6 +57,10 @@ store:
 
 ask: store
 	@python3 tools/phase0/ask.py --db $(DB) --all
+
+# Where a series changed level, and which readings broke away from it.
+trends: store
+	@python3 tools/phase0/trends.py --db $(DB)
 
 # Stress-test the store against the 103 MB budget, under both sampling assumptions.
 storage: store

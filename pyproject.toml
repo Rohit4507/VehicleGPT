@@ -22,6 +22,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 
+# Reference implementations used only to cross-check ours: ruptures validates
+# the PELT breakpoints, scikit-learn provides the IsolationForest baseline.
+# Neither is imported by runtime code, so neither ships to the device.
+verify = ["ruptures>=1.1", "scikit-learn>=1.3"]
+
 [tool.setuptools.packages.find]
 include = ["vehiclegpt*"]
 
