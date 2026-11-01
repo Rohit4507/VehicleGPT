@@ -75,7 +75,9 @@ DEFAULT_TIMEOUT_S = 5.0
 
 #: Default Windows and POSIX model paths
 DEFAULT_QWEN_WINDOWS_PATH = r"C:\Users\rohit\models\qwen3-0.6b\Qwen3-0.6B-Q8_0.gguf"
-DEFAULT_SMOLLM2_WINDOWS_PATH = r"C:\Users\rohit\VehicleGPT\models\smollm2-135m\SmolLM2-135M-Instruct-Q4_K_M.gguf"
+DEFAULT_SMOLLM2_WINDOWS_PATH = (
+    r"C:\Users\rohit\VehicleGPT\models\smollm2-135m\SmolLM2-135M-Instruct-Q4_K_M.gguf"
+)
 
 
 @dataclass
@@ -103,26 +105,27 @@ class SLMRoutingResult:
         return self.intent
 
 
-ROUTER_SYSTEM_PROMPT = """You are an intent classification router for an on-device vehicle intelligence system.
-Your job is ONLY to classify the user's vehicle-related question into one of the allowed intents.
-DO NOT answer the user's question.
-DO NOT generate any vehicle data, diagnostic facts, prices, or technical evidence.
-
-Allowed intents:
-- "pricing": Queries about purchase prices, lease costs, vehicle valuation, pricing estimates.
-- "maintenance": Scheduled servicing, tyre changes, brake pad inspection, fluid replacements.
-- "comparison": Comparing regimes (city vs highway), vehicle models, energy usage comparisons.
-- "vehicle_diagnostics": Warning lights, battery overheating, sensor alerts, DTC codes, error logs.
-- "troubleshooting": Range loss degradation, sudden efficiency drops, ADAS disengagements, failures.
-- "unknown": Unclear queries, out-of-scope requests, or off-topic questions.
-
-You must respond ONLY with a JSON object in the following format:
-{
-  "intent": "<pricing|maintenance|comparison|vehicle_diagnostics|troubleshooting|unknown>",
-  "confidence": <float between 0.0 and 1.0>,
-  "reasoning": "<concise one-sentence rationale>"
-}
-No additional prose or explanation."""
+ROUTER_SYSTEM_PROMPT = (
+    "You are an intent classification router for an on-device vehicle intelligence system.\n"
+    "Your job is ONLY to classify the user's vehicle-related question into one of the "
+    "allowed intents.\n"
+    "DO NOT answer the user's question.\n"
+    "DO NOT generate any vehicle data, diagnostic facts, prices, or technical evidence.\n\n"
+    "Allowed intents:\n"
+    '- "pricing": Queries about purchase prices, lease costs, valuation, pricing estimates.\n'
+    '- "maintenance": Scheduled servicing, tyre changes, brake inspection, fluid replacements.\n'
+    '- "comparison": Comparing regimes (city vs highway), vehicle models, energy comparisons.\n'
+    '- "vehicle_diagnostics": Warning lights, battery overheating, sensor alerts, DTCs, logs.\n'
+    '- "troubleshooting": Range loss degradation, sudden efficiency drops, ADAS dropouts.\n'
+    '- "unknown": Unclear queries, out-of-scope requests, or off-topic questions.\n\n'
+    "You must respond ONLY with a JSON object in the following format:\n"
+    "{\n"
+    '  "intent": "<pricing|maintenance|comparison|vehicle_diagnostics|troubleshooting|unknown>",\n'
+    '  "confidence": <float between 0.0 and 1.0>,\n'
+    '  "reasoning": "<concise one-sentence rationale>"\n'
+    "}\n"
+    "No additional prose or explanation."
+)
 
 
 def build_prompt(question: str, model_type: str = "qwen3") -> str:

@@ -3,20 +3,18 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
 import urllib.error
+from unittest.mock import patch
 
 import pytest
 
 from vehiclegpt.nlu.evaluate import today_ns
 from vehiclegpt.nlu.qwen_router import (
-    DEFAULT_MIN_CONFIDENCE,
     DEFAULT_QWEN_WINDOWS_PATH,
     DEFAULT_SMOLLM2_WINDOWS_PATH,
     EXTENDED_INTENTS,
     SUPPORTED_INTENTS,
     QwenRouter,
-    SLMRoutingResult,
     build_prompt,
     extract_json_payload,
 )
@@ -48,7 +46,10 @@ def test_extract_json_payload_valid():
 
 
 def test_extract_json_payload_with_codeblock():
-    raw = '```json\n{"intent": "maintenance", "confidence": 0.88, "reasoning": "Brake service"}\n```'
+    raw = (
+        '```json\n{"intent": "maintenance", "confidence": 0.88, '
+        '"reasoning": "Brake service"}\n```'
+    )
     parsed = extract_json_payload(raw)
     assert parsed is not None
     assert parsed["intent"] == "maintenance"
@@ -76,7 +77,9 @@ def test_valid_routing_without_fallback(router, now_ns):
         "confidence": 0.92,
         "reasoning": "Query asks about vehicle price."
     })
-    res = router.route("how much does a used Tesla Model 3 cost?", now_ns, raw_response_override=mock_resp)
+    res = router.route(
+        "how much does a used Tesla Model 3 cost?", now_ns, raw_response_override=mock_resp
+    )
     assert res.is_valid_json is True
     assert res.is_valid_taxonomy is True
     assert res.intent == "pricing"
@@ -88,7 +91,11 @@ def test_valid_routing_without_fallback(router, now_ns):
 def test_malformed_json_triggers_deterministic_fallback(router, now_ns):
     bad_resp = "Here is my answer: it is maintenance."
     # The question mentions range and why -> deterministic routes to range_reduction
-    res = router.route("Why has my driving range reduced over the last two weeks?", now_ns, raw_response_override=bad_resp)
+    res = router.route(
+        "Why has my driving range reduced over the last two weeks?",
+        now_ns,
+        raw_response_override=bad_resp,
+    )
     assert res.is_valid_json is False
     assert res.fallback_invoked is True
     assert res.fallback_intent is not None
@@ -102,7 +109,11 @@ def test_unsupported_intent_triggers_fallback(router, now_ns):
         "confidence": 0.99,
         "reasoning": "Unrecognized intent"
     })
-    res = router.route("Show all ADAS disengagement events from yesterday.", now_ns, raw_response_override=hallucinated_resp)
+    res = router.route(
+        "Show all ADAS disengagement events from yesterday.",
+        now_ns,
+        raw_response_override=hallucinated_resp,
+    )
     assert res.is_valid_json is True
     assert res.is_valid_taxonomy is False
     assert res.fallback_invoked is True
@@ -117,7 +128,11 @@ def test_low_confidence_triggers_fallback(router, now_ns):
         "confidence": 0.35,  # Below 0.6
         "reasoning": "Not sure"
     })
-    res = router.route("Compare energy consumption between city and highway driving.", now_ns, raw_response_override=low_conf_resp)
+    res = router.route(
+        "Compare energy consumption between city and highway driving.",
+        now_ns,
+        raw_response_override=low_conf_resp,
+    )
     assert res.is_valid_json is True
     assert res.is_valid_taxonomy is True
     assert res.confidence == 0.35
@@ -128,7 +143,9 @@ def test_low_confidence_triggers_fallback(router, now_ns):
 
 
 def test_server_failure_triggers_fallback(router, now_ns):
-    with patch.object(router, "_call_llama_server", side_effect=urllib.error.URLError("Connection refused")):
+    with patch.object(
+        router, "_call_llama_server", side_effect=urllib.error.URLError("Connection refused")
+    ):
         res = router.route("What happened before the battery overheating warning?", now_ns)
         assert res.fallback_invoked is True
         assert res.error is not None

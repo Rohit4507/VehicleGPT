@@ -26,7 +26,6 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -47,24 +46,48 @@ BENCHMARK_DATASET: list[dict[str, str]] = [
     {"query": "How much will the upcoming 60k service appointment cost?", "intent": "pricing"},
     # Maintenance queries
     {"query": "When is my next scheduled tyre rotation due?", "intent": "maintenance"},
-    {"query": "Check the condition and schedule for cabin air filter replacement.", "intent": "maintenance"},
+    {
+        "query": "Check the condition and schedule for cabin air filter replacement.",
+        "intent": "maintenance",
+    },
     {"query": "Has the brake fluid inspection interval been exceeded?", "intent": "maintenance"},
     {"query": "List all recommended service intervals for coolant flush.", "intent": "maintenance"},
     # Comparison queries
-    {"query": "Compare energy consumption between city and highway driving.", "intent": "comparison"},
+    {
+        "query": "Compare energy consumption between city and highway driving.",
+        "intent": "comparison",
+    },
     {"query": "Is consumption worse in traffic or on the motorway?", "intent": "comparison"},
     {"query": "City versus motorway efficiency differences.", "intent": "comparison"},
     {"query": "Compare highway range against urban commuting range.", "intent": "comparison"},
     # Vehicle diagnostics queries
-    {"query": "What happened before the battery overheating warning?", "intent": "vehicle_diagnostics"},
-    {"query": "Explain what caused the temperature warning amber light.", "intent": "vehicle_diagnostics"},
-    {"query": "What preceded the high-voltage pack thermal fault?", "intent": "vehicle_diagnostics"},
-    {"query": "Check diagnostic trouble codes and sensor alert logs.", "intent": "vehicle_diagnostics"},
+    {
+        "query": "What happened before the battery overheating warning?",
+        "intent": "vehicle_diagnostics",
+    },
+    {
+        "query": "Explain what caused the temperature warning amber light.",
+        "intent": "vehicle_diagnostics",
+    },
+    {
+        "query": "What preceded the high-voltage pack thermal fault?",
+        "intent": "vehicle_diagnostics",
+    },
+    {
+        "query": "Check diagnostic trouble codes and sensor alert logs.",
+        "intent": "vehicle_diagnostics",
+    },
     # Troubleshooting queries
-    {"query": "Why has my driving range reduced over the last two weeks?", "intent": "troubleshooting"},
+    {
+        "query": "Why has my driving range reduced over the last two weeks?",
+        "intent": "troubleshooting",
+    },
     {"query": "When did fuel efficiency show the largest drop?", "intent": "troubleshooting"},
     {"query": "Show all ADAS disengagement events from yesterday.", "intent": "troubleshooting"},
-    {"query": "Why did autopilot hand back steering control yesterday?", "intent": "troubleshooting"},
+    {
+        "query": "Why did autopilot hand back steering control yesterday?",
+        "intent": "troubleshooting",
+    },
 ]
 
 #: Mapping to allow deterministic NLU's domain-specific handler names to align with taxonomy
@@ -130,7 +153,8 @@ class BenchmarkMetrics:
             fn = self.per_intent_fn.get(intent, 0)
             precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
             recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-            f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            denom = precision + recall
+            f1 = (2 * precision * recall) / denom if denom > 0 else 0.0
             f1_scores.append(f1)
         return statistics.mean(f1_scores) if f1_scores else 0.0
 
@@ -224,7 +248,10 @@ def print_table(results: list[BenchmarkMetrics]) -> None:
     print("=" * W)
     print("VehicleGPT Router Benchmark: Deterministic vs. SLM".center(W))
     print("=" * W)
-    headers = f"{'Model':<20} {'Accuracy':>10} {'Macro-F1':>10} {'Invalid%':>10} {'Mean (ms)':>10} {'P50 (ms)':>10} {'P95 (ms)':>10}"
+    headers = (
+        f"{'Model':<20} {'Accuracy':>10} {'Macro-F1':>10} {'Invalid%':>10} "
+        f"{'Mean (ms)':>10} {'P50 (ms)':>10} {'P95 (ms)':>10}"
+    )
     print(headers)
     print("-" * W)
     for m in results:
@@ -260,10 +287,16 @@ def export_csv(results: list[BenchmarkMetrics], out_path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mock", action="store_true", help="Run in mock mode without live llama server")
+    parser.add_argument(
+        "--mock", action="store_true", help="Run in mock mode without live llama server"
+    )
     parser.add_argument("--server-url", default=None, help="llama.cpp server URL")
-    parser.add_argument("--csv", type=Path, default=None, help="Optional output CSV path (will not overwrite existing)")
-    parser.add_argument("--include-smollm2", action="store_true", default=True, help="Include SmolLM2 benchmark")
+    parser.add_argument(
+        "--csv", type=Path, default=None, help="Optional output CSV path (will not overwrite)"
+    )
+    parser.add_argument(
+        "--include-smollm2", action="store_true", default=True, help="Include SmolLM2 benchmark"
+    )
     args = parser.parse_args()
 
     now = today_ns("2026-03-12")
@@ -272,13 +305,17 @@ def main() -> int:
     det_metrics = run_deterministic_benchmark(BENCHMARK_DATASET, now)
 
     qwen_router = QwenRouter(server_url=args.server_url, model_type="qwen3")
-    qwen_metrics = run_slm_benchmark("Qwen3-0.6B", qwen_router, BENCHMARK_DATASET, now, mock=args.mock)
+    qwen_metrics = run_slm_benchmark(
+        "Qwen3-0.6B", qwen_router, BENCHMARK_DATASET, now, mock=args.mock
+    )
 
     results = [det_metrics, qwen_metrics]
 
     if args.include_smollm2:
         smol_router = QwenRouter(server_url=args.server_url, model_type="smollm2")
-        smol_metrics = run_slm_benchmark("SmolLM2-135M", smol_router, BENCHMARK_DATASET, now, mock=args.mock)
+        smol_metrics = run_slm_benchmark(
+            "SmolLM2-135M", smol_router, BENCHMARK_DATASET, now, mock=args.mock
+        )
         results.append(smol_metrics)
 
     print_table(results)
