@@ -95,6 +95,9 @@ correct answers against a scenario with known ground truth. Retrieval recall@8
 | 2.9 DSL schema, validator, compiler | ✅ five kinds, adversarial suite, mutation-checked |
 | 2.2/2.3 change-point and anomaly scoring | ✅ PELT (agrees with `ruptures` 300/300), CUSUM with a measured false-alarm rate, MAD scoring on a robust local linear fit |
 | 2.4 `driving_mode` derivation | 🔶 speed thresholds only, no GMM |
+| 3.1 time + slots | ✅ deterministic; 65% holdout vs 96% design measures the ceiling |
+| 3.6/3.7/3.9 evidence pack, renderer, verifier | ✅ grounding 28/28 on the five brief answers |
+| 3.2/3.3/3.5/3.8 model-dependent NLU | ⛔ HuggingFace is unreachable, so no weights can be fetched (same block as dense retrieval) |
 | 2.5 lead-lag / precedence | ✅ onset + lagged correlation with `n_eff` gating; the cause is undatable (duty-cycled) and reported as such |
 | 2.6 episode cards | ✅ distilled into `card` + FTS5 at build time; adas/overheat/trend cards |
 | 2.7 lexical retrieval (FTS5/BM25) | ✅ card search with quoted-token safety and a stopword list |
@@ -123,16 +126,16 @@ product that happens to have no AI in it. Everything after is enhancement.
 
 | # | Task | Who |
 |---|---|---|
-| 3.1 | Rule pre-pass (DTC regex, time-expression parser, unit parser) | 🤖 |
-| 3.2 | Embedding intent kNN bootstrap (works day 1, zero training data) | 🤖 |
+| 3.1 | Rule pre-pass (DTC regex, time-expression parser, unit parser) | 🤖 — time ✅, slots ✅, DTC pending |
+| 3.2 | Embedding intent kNN bootstrap (works day 1, zero training data) | ⛔ weights unreachable |
 | 3.3 | Fine-tune MiniLM-class encoder for 12-way intent + slot tagging on a synthetic query set (500+ paraphrases generated from templates, hand-corrected) | 🖥️ |
 | 3.4 | Quantise encoder to ONNX int8, verify accuracy delta ≤ 2 pts | 🖥️ |
-| 3.5 | SLM router: GBNF grammar + prompt template + prefix-cache strategy | 🤖 |
-| 3.6 | **Evidence pack builder** with provenance IDs | 🤖 |
-| 3.7 | **Template renderer with named-slot substitution** | 🤖 |
+| 3.5 | SLM router: GBNF grammar + prompt template + prefix-cache strategy | ⛔ weights unreachable |
+| 3.6 | **Evidence pack builder** with provenance IDs | ✅ |
+| 3.7 | **Template renderer with named-slot substitution** | 🔶 renderer + verifier ✅; handlers still format inline |
 | 3.8 | **SLM narrator** (P2/P3) with the same slot contract | 🤖 |
-| 3.9 | Guardrails: scope, injection sanitiser, **numeric verifier** | 🤖 |
-| 3.10 | Eval harness: intent accuracy, grounding rate, recall@8, abstention | 🤖 (harness) / 🖥️ (runs) |
+| 3.9 | Guardrails: scope, injection sanitiser, **numeric verifier** | ✅ |
+| 3.10 | Eval harness: intent accuracy, grounding rate, recall@8, abstention | ✅ routing + grounding |
 | 3.11 | Latency harness: p50/p95 per path per tier | 🖥️ |
 
 **Gate G3:** intent accuracy ≥ 92 %, **numeric grounding rate = 1.000**, and

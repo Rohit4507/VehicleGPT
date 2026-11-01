@@ -1,4 +1,4 @@
-.PHONY: help check check-data model specs docs test test-data demo store ask storage trends episodes precursors emulate bakeoff bakeoff-required
+.PHONY: help check check-data model specs docs test test-data demo store ask storage trends episodes precursors nlu emulate bakeoff bakeoff-required
 
 help:
 	@echo "make check      - docs + feasibility model + stdlib tests (no deps needed)"
@@ -61,6 +61,11 @@ ask: store
 # The searchable episode cards, and a lexical search over them.
 episodes: store
 	@python3 tools/phase0/episodes.py --db $(DB) --list
+
+# Route questions, measure grounding, and score the paraphrases.
+nlu: store
+	@python3 tools/phase0/nlu.py --db $(DB) --eval holdout_v2
+	@python3 tools/phase0/nlu.py --db $(DB) --grounding
 
 # What moved before an event, by precedence and by lagged correlation.
 precursors: store

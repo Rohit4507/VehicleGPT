@@ -29,6 +29,10 @@ from vehiclegpt.analytics import changepoint, dsl
 
 EVIDENCE_KIND_PREFIX = "fault."
 
+#: Pack temperature that counts as "rising" in the precursor answer. Named rather
+#: than inlined so the sentence and the threshold cannot drift apart.
+TEMP_RISE_C = 55.0
+
 
 @dataclass
 class Answer:
@@ -230,6 +234,9 @@ def efficiency_largest_drop(conn: sqlite3.Connection, min_km: float = 10.0) -> A
     data = {"day": row["day"], "wh_per_km": round(row["wh_per_km"], 1),
             "prior_wh_per_km": round(row["prev_wh_per_km"], 1),
             "delta_wh_per_km": round(row["delta"], 1),
+            # Registered because the sentence prints it: a derived number that
+            # exists only in an f-string cannot be traced back to anything.
+            "delta_pct": round(_pct(row["wh_per_km"], row["prev_wh_per_km"]), 1),
             "ambient_c": round(row["ambient_c"], 1),
             "prior_ambient_c": round(row["prev_ambient_c"], 1)}
     if ctx is not None:
@@ -313,7 +320,7 @@ def before_warning(conn: sqlite3.Connection, lookback_min: int = 60) -> Answer:
     temp = _series(conn, "battery.cell_temp_max", lo, warn["ts_ns"])
 
     stall_ns = _sustained_stall(pump)
-    rise_ns = next((ts for ts, v in temp if v >= 55.0), None)
+    rise_ns = next((ts for ts, v in temp if v >= TEMP_RISE_C), None)
 
     parts = []
     if stall_ns is not None:
@@ -321,7 +328,8 @@ def before_warning(conn: sqlite3.Connection, lookback_min: int = 60) -> Answer:
         parts.append(f"the coolant pump stopped for good at {_clock(stall_ns)}, "
                      f"{lead:.0f} minutes earlier")
     if rise_ns is not None:
-        parts.append(f"pack temperature passed 55 C at {_clock(rise_ns)}")
+        parts.append(f"pack temperature passed {TEMP_RISE_C:.0f} C at "
+                     f"{_clock(rise_ns)}")
     parts.append(f"the overheating warning was raised at {_clock(warn['ts_ns'])}")
 
     caveats = []
@@ -335,6 +343,8 @@ def before_warning(conn: sqlite3.Connection, lookback_min: int = 60) -> Answer:
               "stall_time": _clock(stall_ns) if stall_ns else None,
               "lead_minutes": (round((warn["ts_ns"] - stall_ns) / 6e10, 1)
                                if stall_ns else None),
+              "rise_threshold_c": TEMP_RISE_C,
+              "rise_time": _clock(rise_ns) if rise_ns else None,
               "lookback_min": lookback_min},
         evidence=[dict(warn)],
         caveats=caveats)
@@ -370,7 +380,8 @@ def city_vs_highway(conn: sqlite3.Connection) -> Answer:
     )
     return Answer(
         intent="city_vs_highway", path="P0", text=text,
-        data={"city": city, "highway": hwy, "highway_over_city": round(ratio, 3)},
+        data={"city": city, "highway": hwy, "highway_over_city": round(ratio, 3),
+              "spread_factor": round(max(ratio, 1 / ratio), 2)},
         evidence=[city, hwy],
         caveats=["regimes are classified from speed thresholds (5 / 80 kph); "
                  "a slow motorway queue is counted as city",
