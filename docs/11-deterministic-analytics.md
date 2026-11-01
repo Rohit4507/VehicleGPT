@@ -376,7 +376,71 @@ The dense half of hybrid retrieval is likewise **not implemented**: it needs
 dense side is a plug-in, but nothing in this repository is measured on an index
 that does not exist.
 
-## 11.9 What this layer does not do
+## 11.9 What moved first
+
+"What happened before the battery overheating warning?" is a precedence
+question, and precedence is where analytics most easily lies. Two instruments
+answer different halves of it: **onset** (where a series departs from a settled
+state) dates an event; **lagged correlation** measures how alike two series are
+once slid against each other. `vehiclegpt/analytics/leadlag.py` runs both, and
+`make precursors` prints them for the warning event.
+
+### The correlation is right; reading it is not
+
+`cross_correlation` is O(1) per lag: the cross term comes from one
+`np.correlate(y, x, "full")` call and the moments from prefix sums. The index
+mapping is easy to invert — the first attempt used `(n-1)-L` and returned `-5`
+for a known `+5` lead — so the test suite pins it against a naive double loop
+(`4.4e-16` agreement) and against a pure shift, which must give exactly `1.0`.
+
+The physics of the data, not the arithmetic, is the problem. Every onboard
+signal is a slow ramp, so pairwise correlation between two *independent* AR(1)
+series at φ=0.98 over 600 samples averages `|r| = 0.33` and peaks at `0.57`.
+Gating on a p-value does not fix this: the circular-shift null was already
+correctly calibrated, at 5–10% false positives. The coefficient itself is
+overstated because 600 smooth samples contain about 6 independent ones.
+
+So every row travels with `n_eff = n(1-φ)/(1+φ)` and `reliable`, defined as
+`n_eff ≥ 10`. On the 2026-03-11 event the aligned series are so smooth that
+`n_eff` collapses to **1.2** and all eighteen signals are unreliable: their
+correlations run 0.86–1.00 and mean nothing. The table still reports them, and
+the CLI marks each one `smooth, corr not usable`. Reporting the coefficient
+without the sample size is the error to avoid; the statistic was never wrong.
+
+### Precedence needed three fixes to say anything
+
+`changepoint.segments()[1]["start"]` — the first change in the window — is not
+an onset. It fired at the window's edge, so almost every signal "led" by the
+same amount and the ranking was arbitrary. Three corrections, each caught by a
+test:
+
+1. **A change in the opening seconds is the window starting.** Every signal
+   begins somewhere; without a skip the drive start wins for all eighteen.
+2. **Anchor the window to the drive.** Between drives there is no data, so a
+   window straddling take-off makes "the car started" the largest change in
+   every signal at once.
+3. **A precursor is a departure from a settled state.** The preceding segment
+   must have lasted minutes. This is what separates *this signal changed* from
+   *this signal has been changing all along*.
+
+The results are then honest but unflattering. On the warning event, the coolant
+inlet and `cell_temp_min` turn at 17:36:46 — before the 17:50:12 warning — while
+speed, rpm, pedal and brake all turn together at 17:50:00 when the car stops.
+`crowded` is set: **11 signals departed within seconds of each other**, which is
+the signature of one shared driver, not of one cause among them. Precedence
+cannot separate them and the CLI says so instead of printing a ranking.
+
+### The cause is in the group that cannot be dated
+
+The coolant pump is not in that list at all. It duty-cycles before it fails, so
+it never holds a steady state and has **no baseline to depart from**. It is
+returned separately as `unsettled` rather than dropped, because "not dated" is
+not "not involved" — it is the actual cause. A duty-cycled fault needs a
+different instrument, and `episodes.py` has one: `sustained_below` dates it at
+17:35, 22 minutes before the warning. Both mechanisms are needed; neither
+subsumes the other, and the tool points at the one that applies.
+
+## 11.10 What this layer does not do
 
 - **It does not parse free text.** `classify()` is a keyword matcher over five
   known shapes. A paraphrase it does not recognise escalates rather than
@@ -394,5 +458,15 @@ that does not exist.
   attribution. "HVAC accounts for 66 Wh/km of 213" is arithmetic; "the cold
   caused the range loss" is an inference and belongs to the model layer.
 - **It has never seen a real vehicle.** The thresholds that split city from
-  motorway (5 and 80 kph) and the stall window (60 s) are tuned to the
-  simulator. They need re-tuning against recorded data.
+  motorway (5 and 80 kph), the stall window (60 s), and the onset parameters
+  (300 s of quiet, 1.0 min-delta) are tuned to the simulator. They need
+  re-tuning against recorded data.
+- **It does not establish causation, only ordering.** A signal that departs
+  first is a candidate antecedent, and on this dataset the candidates arrive in
+  a crowd. Separating them needs intervention — the `fault.*` injections the
+  generator already records — or a domain model, not a better correlation.
+- **Precedence costs about 20 s per query** on 18 signals: PELT over 1500
+  samples each, plus a 64-shift surrogate test per pair. That is far beyond the
+  2 s budget, so it belongs in build-time analysis, not in the request path. If
+  it must answer live, the candidates need pre-ranking and the shifts need
+  cutting.

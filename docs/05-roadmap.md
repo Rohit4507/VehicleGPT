@@ -95,7 +95,7 @@ correct answers against a scenario with known ground truth. Retrieval recall@8
 | 2.9 DSL schema, validator, compiler | ✅ five kinds, adversarial suite, mutation-checked |
 | 2.2/2.3 change-point and anomaly scoring | ✅ PELT (agrees with `ruptures` 300/300), CUSUM with a measured false-alarm rate, MAD scoring on a robust local linear fit |
 | 2.4 `driving_mode` derivation | 🔶 speed thresholds only, no GMM |
-| 2.5 lead-lag / precedence | 🔶 event-level only, and empty on this data by design |
+| 2.5 lead-lag / precedence | ✅ onset + lagged correlation with `n_eff` gating; the cause is undatable (duty-cycled) and reported as such |
 | 2.6 episode cards | ✅ distilled into `card` + FTS5 at build time; adas/overheat/trend cards |
 | 2.7 lexical retrieval (FTS5/BM25) | ✅ card search with quoted-token safety and a stopword list |
 | 2.7 dense retrieval + RRF, 2.8 BGE | ⛔ **blocked**: HuggingFace is unreachable from the sandbox, so no embedding model can be downloaded. RRF is implemented and tested so the dense side plugs in. |
@@ -104,7 +104,8 @@ The DSL half of G2 is met: all five questions run through the compiled path and
 return byte-identical answers to the pre-refactor handlers. The recall half is
 untouched, and its dense-retrieval component cannot be measured here.
 
-Episode cards and lexical retrieval (2.6/2.7) are in `make episodes`. No
+Episode cards and lexical retrieval (2.6/2.7) are in `make episodes`; what moved
+before an event is in `make precursors`. No
 recall@8 figure is claimed: with three cards it would measure the corpus, not the
 retriever. See doc 11 §11.8.
 
