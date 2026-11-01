@@ -1,0 +1,369 @@
+# Canonical signal registry.
+#
+# ONE definition of every signal VehicleGPT understands, independent of which
+# bus, protocol or DBC it arrived on. Adapters translate into these paths; the
+# store, analytics and AI planes only ever see these paths.
+#
+# Adding a protocol must never require touching this file's consumers.
+#
+# tier:
+#   hot   - sampled continuously at rate_hz, retained for the full horizon
+#   slow  - retained on-change, with deadband compression
+#   burst - retained only in event context windows (high-rate channels)
+#
+# bounds are PHYSICAL limits. The normaliser rejects out-of-range values as a
+# sensor fault rather than storing them - see vehiclegpt/ingest/base.py.
+
+version: 1
+vehicle:
+  id: "veh-0001"
+  powertrain: bev
+  model_year: 2023
+
+signals:
+  # ---------------- vehicle dynamics ----------------
+  - path: vehicle.speed
+    unit: kph
+    min: 0
+    max: 250
+    rate_hz: 10
+    tier: hot
+    deadband: 0.2
+    description: Wheel-derived vehicle speed
+    sources:
+      - dbc: tesla_can.dbc
+        message: ESP_B
+        signal: ESP_vehicleSpeed
+
+  - path: vehicle.accel_long
+    unit: m/s2
+    min: -12
+    max: 12
+    rate_hz: 10
+    tier: hot
+    deadband: 0.05
+    description: Longitudinal acceleration (derived at normalise time if absent)
+    sources: []
+
+  - path: chassis.steer_angle
+    unit: deg
+    min: -540
+    max: 540
+    rate_hz: 10
+    tier: hot
+    deadband: 0.5
+    description: Steering wheel angle
+    sources:
+      - dbc: tesla_can.dbc
+        message: STW_ANGL_STAT
+        signal: StW_Angl
+
+  - path: chassis.brake_active
+    unit: "-"
+    min: 0
+    max: 1
+    rate_hz: 10
+    tier: hot
+    deadband: 0
+    description: >-
+      Brake pedal applied (1) or released (0). tesla_can.dbc models DI_brakePedal
+      as a single bit with the value table Applied/Not_applied, so a continuous
+      pedal percentage is not available on this bus and is not invented here.
+      Pedal travel would come from a chassis/ESP message on a real vehicle.
+    sources:
+      - dbc: tesla_can.dbc
+        message: DI_torque2
+        signal: DI_brakePedal
+
+  # ---------------- powertrain ----------------
+  - path: powertrain.accel_pedal
+    unit: "%"
+    min: 0
+    max: 100
+    rate_hz: 10
+    tier: hot
+    deadband: 1.0
+    description: Accelerator pedal position
+    sources:
+      - dbc: tesla_can.dbc
+        message: DI_torque1
+        signal: DI_pedalPos
+
+  - path: powertrain.motor_torque
+    unit: Nm
+    min: -500
+    max: 500
+    rate_hz: 10
+    tier: hot
+    deadband: 1.0
+    description: Motor torque, negative under regen
+    sources:
+      - dbc: tesla_can.dbc
+        message: DI_torque1
+        signal: DI_torqueMotor
+
+  - path: powertrain.motor_rpm
+    unit: rpm
+    min: 0
+    max: 20000
+    rate_hz: 10
+    tier: hot
+    deadband: 10
+    description: Motor speed
+    sources:
+      - dbc: tesla_can.dbc
+        message: DI_torque1
+        signal: DI_motorRPM
+
+  - path: powertrain.gear
+    unit: "-"
+    min: 0
+    max: 7
+    rate_hz: 10
+    tier: slow
+    deadband: 0
+    description: >-
+      Selected gear. 3-bit field (0 invalid, 1 P, 2 R, 3 N, 4 D, 7 SNA) per the
+      DBC value table, hence the 0-7 range rather than a full nibble.
+    sources:
+      - dbc: tesla_can.dbc
+        message: DI_torque2
+        signal: DI_gear
+
+  # ---------------- ADAS ----------------
+  - path: adas.state
+    unit: "-"
+    min: 0
+    max: 15
+    rate_hz: 10
+    tier: slow
+    deadband: 0
+    description: ADAS engagement state (0 = off)
+    sources:
+      - dbc: tesla_can.dbc
+        message: AutopilotStatus
+        signal: autopilotStatus
+
+  - path: adas.ldw_active
+    unit: "-"
+    min: 0
+    max: 1
+    rate_hz: 10
+    tier: slow
+    deadband: 0
+    description: Lane-departure warning active
+    sources:
+      - dbc: tesla_can.dbc
+        message: AutopilotStatus
+        signal: DAS_laneDepartureWarning
+
+  - path: adas.aeb_active
+    unit: "-"
+    min: 0
+    max: 1
+    rate_hz: 10
+    tier: slow
+    deadband: 0
+    description: Autonomous emergency braking has fired
+    sources:
+      - dbc: tesla_can.dbc
+        message: DAS_control
+        signal: DAS_aebEvent
+
+  # ---------------- thermal / environment ----------------
+  - path: thermal.ambient
+    unit: C
+    min: -40
+    max: 60
+    rate_hz: 10
+    tier: slow
+    deadband: 0.2
+    description: Outside air temperature
+    sources:
+      - dbc: tesla_can.dbc
+        message: BODY_R1
+        signal: AirTemp_Outsd
+
+  # ---------------- HV battery pack (vendor extension) ----------------
+  - path: battery.soc
+    unit: "%"
+    min: 0
+    max: 100
+    rate_hz: 10
+    tier: hot
+    deadband: 0.1
+    description: State of charge
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packStatus
+        signal: BMS_soc_pct
+
+  - path: battery.pack_voltage
+    unit: V
+    min: 0
+    max: 800
+    rate_hz: 10
+    tier: hot
+    deadband: 0.2
+    description: Pack terminal voltage
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packStatus
+        signal: BMS_packVoltage_V
+
+  - path: battery.pack_current
+    unit: A
+    min: -500
+    max: 500
+    rate_hz: 10
+    tier: hot
+    deadband: 0.5
+    description: Pack current, negative on discharge
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packStatus
+        signal: BMS_packCurrent_A
+
+  - path: battery.cell_temp_max
+    unit: C
+    min: -40
+    max: 125
+    rate_hz: 10
+    tier: hot
+    deadband: 0.2
+    description: Hottest cell temperature - the overheat indicator
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packStatus
+        signal: BMS_packTempMax_C
+
+  - path: battery.cell_temp_min
+    unit: C
+    min: -40
+    max: 125
+    rate_hz: 10
+    tier: hot
+    deadband: 0.2
+    description: Coldest cell temperature
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packStatus
+        signal: BMS_packTempMin_C
+
+  - path: battery.cell_imbalance
+    unit: mV
+    min: 0
+    max: 16383
+    rate_hz: 10
+    tier: slow
+    deadband: 0.5
+    description: Max cell-to-cell voltage imbalance
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packThermal
+        signal: BMS_cellImbalance_mV
+
+  - path: battery.overheat_warning
+    unit: "-"
+    min: 0
+    max: 1
+    rate_hz: 10
+    tier: slow
+    deadband: 0
+    description: BMS overheat warning flag
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packThermal
+        signal: BMS_overheatWarning
+
+  - path: thermal.coolant_inlet
+    unit: C
+    min: -40
+    max: 125
+    rate_hz: 10
+    tier: slow
+    deadband: 0.2
+    description: Pack coolant inlet temperature
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packThermal
+        signal: BMS_coolantInlet_C
+
+  - path: thermal.coolant_pump
+    unit: "%"
+    min: 0
+    max: 100
+    rate_hz: 10
+    tier: slow
+    deadband: 1.0
+    description: Coolant pump duty
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: BMS_packThermal
+        signal: BMS_coolantPump_pct
+
+  # ---------------- energy management ----------------
+  - path: energy.per_km
+    unit: Wh/km
+    min: 0
+    max: 2000
+    rate_hz: 10
+    tier: hot
+    deadband: 0.5
+    description: Instantaneous energy consumption per distance
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: VCU_energy
+        signal: VCU_energyPerKm_Wh
+
+  - path: energy.range_estimate
+    unit: km
+    min: 0
+    max: 1000
+    rate_hz: 10
+    tier: hot
+    deadband: 0.2
+    description: Displayed remaining range
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: VCU_energy
+        signal: VCU_rangeEstimate_km
+
+  - path: energy.regen_power
+    unit: W
+    min: 0
+    max: 102300
+    rate_hz: 10
+    tier: hot
+    deadband: 20
+    description: Recovered power under braking
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: VCU_energy
+        signal: VCU_regenPower_W
+
+  - path: hvac.power
+    unit: W
+    min: 0
+    max: 8000
+    rate_hz: 10
+    tier: hot
+    deadband: 20
+    description: HVAC electrical draw - a major range factor
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: VCU_energy
+        signal: HVAC_power_W
+
+  - path: hvac.setpoint
+    unit: C
+    min: 0
+    max: 60
+    rate_hz: 10
+    tier: slow
+    deadband: 0.5
+    description: HVAC target temperature
+    sources:
+      - dbc: vehiclegpt_vendor_ext.dbc
+        message: VCU_energy
+        signal: HVAC_setpoint_C

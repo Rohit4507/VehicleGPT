@@ -1,0 +1,15 @@
+# Baseline: a mixed commute with no faults.
+# Used to answer Q5 ("compare city vs highway") and to give Q1/Q2 a clean
+# baseline against which the degraded scenarios are compared.
+name: city_highway_week
+seed: 20260101
+ambient_c: 18.0
+initial_soc: 82.0
+hvac_setpoint_c: 22.0
+segments:
+  - {mode: city,    duration_s: 900}   # 15 min commute
+  - {mode: highway, duration_s: 1200}  # 20 min motorway
+  - {mode: city,    duration_s: 600}
+  - {mode: idle,    duration_s: 120}
+  - {mode: highway, duration_s: 900}
+faults: []
