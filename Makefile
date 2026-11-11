@@ -67,6 +67,9 @@ nlu: store
 	@python3 tools/phase0/nlu.py --db $(DB) --eval holdout_v2
 	@python3 tools/phase0/nlu.py --db $(DB) --grounding
 
+benchmark-router:
+	@python3 tools/phase0/benchmark_router.py --mock
+
 # What moved before an event, by precedence and by lagged correlation.
 precursors: store
 	@python3 tools/phase0/precursors.py --db $(DB) --event warning --window 1500
