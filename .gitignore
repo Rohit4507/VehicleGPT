@@ -15,3 +15,8 @@ reports/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# build / package artifacts
+*.egg-info/
+dist/
+build/
